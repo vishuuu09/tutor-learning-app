@@ -110,23 +110,3 @@ tutor-learning-app/
 ├── vite.config.ts
 └── README.md
 ```
-
-## Development and Contributions
-
-This repository is being used to study the existing codebase and develop additional functionality.
-
-As new features are implemented and tested, their purpose, implementation details, and limitations can be documented here.
-
-## Original Project and Attribution
-
-This project is based on the original open-source **Tutor** repository:
-
-https://github.com/demetrius-edelin/tutor
-
-The original project and its authors retain credit for their respective work. This repository maintains the applicable license and attribution notices.
-
-Please refer to the included `LICENSE` file for the terms governing use, modification, and redistribution.
-
-## License
-
-See the [`LICENSE`](LICENSE) file for the applicable license terms.
