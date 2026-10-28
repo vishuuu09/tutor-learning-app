@@ -1,0 +1,121 @@
+import { existsSync, readFileSync } from "node:fs";
+import { parseEnv } from "node:util";
+
+// "google" is the Gemini API. Its key also serves the video model, so one Gemini key serves the whole tutor.
+export const PROVIDERS = ["anthropic", "openai", "openrouter", "google"] as const;
+export type Provider = (typeof PROVIDERS)[number];
+
+export const KEY_NAMES: Record<Provider, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  google: "GEMINI_API_KEY",
+};
+
+export const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
+export interface ModelConfig {
+  provider: Provider;
+  model: string;
+  apiKey: string;
+  // Null means the default of the model.
+  reasoning: ReasoningLevel | null;
+  // OpenRouter only: the providers that can serve the model, in order. Empty means that OpenRouter selects.
+  providers?: string[];
+}
+
+export class ConfigError extends Error {
+  override name = "ConfigError";
+}
+
+// The selected model in one line, for example "openrouter vendor/model, providers deepinfra, together".
+export function describeModel(config: ModelConfig): string {
+  const providers = config.providers?.length ? `, providers ${config.providers.join(", ")} (no others)` : "";
+  return `${config.provider} ${config.model}${providers}`;
+}
+
+// Read the .env file. A value in .env replaces a value from the shell.
+// An empty value in .env does not change the shell value.
+export function loadEnvFile(path = ".env", env: NodeJS.ProcessEnv = process.env): void {
+  if (!existsSync(path)) return;
+  for (const [name, value] of Object.entries(parseEnv(readFileSync(path, "utf8")))) {
+    if (value !== undefined && value.trim() !== "") env[name] = value.trim();
+  }
+}
+
+// The model that the user selected in .env. The tutor has no default model.
+export function modelConfig(env: NodeJS.ProcessEnv = process.env): ModelConfig {
+  const provider = (env.LLM_PROVIDER ?? "").trim().toLowerCase();
+  if (!provider) {
+    throw new ConfigError("No provider is selected. On the Settings page, select a provider, or set LLM_PROVIDER in .env.");
+  }
+  if (!(PROVIDERS as readonly string[]).includes(provider)) {
+    throw new ConfigError(`LLM_PROVIDER "${provider}" is not valid. Use anthropic, openai, openrouter, or google.`);
+  }
+  const model = (env.LLM_MODEL ?? "").trim();
+  if (!model) {
+    throw new ConfigError("No model is selected. On the Settings page, type the model name, or set LLM_MODEL in .env.");
+  }
+  const keyName = KEY_NAMES[provider as Provider];
+  const apiKey = (env[keyName] ?? "").trim();
+  if (!apiKey) {
+    throw new ConfigError(`The provider "${provider}" needs an API key. On the Settings page, type the key, or set ${keyName} in .env.`);
+  }
+  const reasoning = (env.LLM_REASONING ?? "").trim().toLowerCase();
+  if (reasoning && !(REASONING_LEVELS as readonly string[]).includes(reasoning)) {
+    throw new ConfigError(
+      `LLM_REASONING "${reasoning}" is not valid. Use ${REASONING_LEVELS.join(", ")}, or leave it empty for the default of the model.`,
+    );
+  }
+  // Other providers ignore OPENROUTER_PROVIDERS, so that the user can switch the provider and keep the list.
+  const providers =
+    provider === "openrouter"
+      ? (env.OPENROUTER_PROVIDERS ?? "")
+          .split(",")
+          .map((slug) => slug.trim().toLowerCase())
+          .filter(Boolean)
+      : [];
+  return { provider: provider as Provider, model, apiKey, reasoning: (reasoning || null) as ReasoningLevel | null, providers };
+}
+
+// Videos use a second model, because the main model cannot read video. Only Gemini models read YouTube addresses:
+// through OpenRouter, or through the Gemini API of Google.
+export const VIDEO_PROVIDERS = ["openrouter", "google"] as const;
+export type VideoProvider = (typeof VIDEO_PROVIDERS)[number];
+
+export const VIDEO_KEY_NAMES: Record<VideoProvider, string> = {
+  openrouter: "OPENROUTER_API_KEY",
+  google: "GEMINI_API_KEY",
+};
+
+export interface VideoConfig {
+  provider: VideoProvider;
+  model: string;
+  apiKey: string;
+}
+
+export function describeVideoModel(config: VideoConfig): string {
+  return `${config.provider} ${config.model}`;
+}
+
+// The video model that the user selected in .env. The tutor has no default video model.
+export function videoConfig(env: NodeJS.ProcessEnv = process.env): VideoConfig {
+  const provider = (env.VIDEO_PROVIDER ?? "").trim().toLowerCase();
+  if (!provider) {
+    throw new ConfigError("Videos need a video model. On the Settings page, select the video provider and the video model, or set VIDEO_PROVIDER and VIDEO_MODEL in .env.");
+  }
+  if (!(VIDEO_PROVIDERS as readonly string[]).includes(provider)) {
+    throw new ConfigError(`VIDEO_PROVIDER "${provider}" is not valid. Use openrouter or google.`);
+  }
+  const model = (env.VIDEO_MODEL ?? "").trim();
+  if (!model) {
+    throw new ConfigError("No video model is selected. On the Settings page, type the name of a Gemini model, or set VIDEO_MODEL in .env.");
+  }
+  const keyName = VIDEO_KEY_NAMES[provider as VideoProvider];
+  const apiKey = (env[keyName] ?? "").trim();
+  if (!apiKey) {
+    throw new ConfigError(`The video provider "${provider}" needs an API key. On the Settings page, type the key, or set ${keyName} in .env.`);
+  }
+  return { provider: provider as VideoProvider, model, apiKey };
+}

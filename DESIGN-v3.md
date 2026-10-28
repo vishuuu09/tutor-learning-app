@@ -1,0 +1,1127 @@
+# Tutor: Design
+
+Status: draft 3, revision 13. Date: 2026-10-15. This file replaces `DESIGN.md` (draft 2).
+
+## Purpose
+
+The tutor helps one user learn from books that the user owns. The user groups the books into subjects of study. For each subject, the tutor finds the concepts that the user does not know. Then it teaches those concepts one at a time and tests each one.
+
+The tutor is a learning tool. It is not a job-search tool.
+
+The tutor uses one large language model (LLM) from Anthropic, OpenAI, OpenRouter, or Google. The text in this file calls the LLM "the model".
+
+## Decisions
+
+- Subjects are neutral. The tutor has no built-in subjects and no code for a specific subject. The user creates a subject with a name and adds books to it. The books define the content of the subject.
+- Books are EPUB files or tagged PDF files. A YouTube video or playlist also becomes a book, through an EPUB file. See "Videos (phase 3)".
+- Until phase 4, the tutor runs on the laptop of the user. In phase 4, each user can also run it on a server. The tutor has no Telegram bot and no other messaging.
+- The tutor is free and open source. Each user hosts their own copy. The project offers no public hosted version. See "Self-hosted release (phase 4)".
+- The review board shows what the user learned. The user decides what to read again or to test again. The tutor has no review schedule.
+- The user makes each decision about what to test, what to learn, what to skip, and the order of study. The tutor only suggests.
+- The tutor uses one model. The user selects the provider, the model, and the API key in the `.env` file. The tutor has no default model.
+- Videos use a second model, because the main model cannot read video. This is the only exception to the rule of one model.
+
+## Principle: the tutor suggests, the user decides
+
+The tutor suggests what to test, what to learn, and in which order. The user makes each decision. The tutor never adds, removes, or moves a concept in the study queue without a click from the user.
+
+## The learning loop
+
+```
+ [Select] ───► [Diagnose] ───► [Choose] ───► [Study queue]
+ mark each     test the        learn or      the user sets
+ concept:      "Test"          skip each     the order
+ test, learn,  concepts        failed                │
+ or skip                       concept               ▼
+                                         first concept in the queue
+                                                     │
+                                                     ▼
+                                    ┌────────────► [Teach]
+                                    │                 │
+                     fail: the user │                 ▼
+                     selects the    └───────────── [Test]
+                     next action                      │ pass
+                                                      ▼
+                                          next concept in the queue
+```
+
+The loop has these steps:
+
+1. Select: on the concept map, the user marks concepts "Test", "Learn", or "Skip". One mark can apply to many concepts from different modules.
+2. Diagnose: the tutor tests the concepts with the mark "Test".
+3. Choose: the tutor shows the results. For each failed concept, the user selects "Learn" or "Skip".
+4. Queue: each "Learn" concept goes into the study queue. The tutor suggests an order, and the user can change it.
+5. Teach: the tutor teaches the first concept in the queue. The lesson uses the sections of all books that cover the concept, and cites them. The user can ask questions about the lesson.
+6. Test: the user clicks "Test me". The tutor asks new questions about the concept.
+7. Next: if the user passes, the concept becomes `mastered`, and the tutor goes to the next concept in the queue. If the user fails, the user selects the next action.
+
+The subject is complete after two conditions are true. The queue is empty, and the user marked each concept of the subject.
+
+## Subjects
+
+A subject is a separate area of study. It has its own books, concept map, study queue, and progress.
+
+To create a subject, the user types a name on the home screen. Then the user adds EPUB files to the subject. Each new book adds concepts to the concept map of the subject.
+
+The user works in one subject at a time. Each subject keeps its progress.
+
+For a concept that two books cover, the lesson uses both books.
+
+## Concept map
+
+Each subject has one concept map. The map has modules, and each module has concepts. A module is a group of related concepts, for example "Indexes" in a database book.
+
+Each concept has these properties:
+
+- A name and a one-line objective.
+- A kind: `knowledge` or `skill`. A `skill` concept is a task that the user must do, for example write a query.
+- A level: `basic`, `intermediate`, or `advanced`.
+- The prerequisites: other concepts that the user must know first.
+- The sources: the book sections that teach the concept.
+
+Size rule: one concept is one idea that the source explains, so that the tutor can teach it in one lesson and test it. Three things go into the concept of an idea: the same idea in other words, a direct result of the idea, and a small part of it. The number of concepts follows the content, not the length of the text.
+
+The user does not write the concept map. The model makes it during ingest. The user can see it on the map screen.
+
+The map follows the book order. The order of the ingest runs does not change it:
+
+- A concept takes the place of its first source: the book, then the chapter, then the section. The books come in the order of ingest.
+- A module takes the place of its first concept. After each save, the modules get new numbers in this order.
+- A concept or a module with no source comes last.
+
+## Ingest
+
+Ingest is the most important step. If ingest misses a concept, the user never sees it. Thus, ingest has three goals:
+
+1. Keep all the text of the book.
+2. Find all important concepts.
+3. Show the user what ingest skipped, so that the user can fix the gaps.
+
+Ingest keeps the list of concepts short. Each concept costs the user a lesson and a test, and it costs model requests. Thus, ingest puts a doubtful small idea into a larger concept, or leaves it out. The review stage compares the concepts with the important terms of the author, so a main idea is not lost. The report shows the items that ingest skipped.
+
+Before this rule, ingest kept each doubtful concept. A 6-minute video of 1,099 words then gave 26 concepts and 52 diagnosis questions, and the same ideas came back in many concepts.
+
+Until phase 3, the user starts ingest from the command line. In phase 3, the user adds a book on the subject screen. See "Ingest in the app (phase 3)".
+
+Ingest has four stages: parse, extract, review, and merge. Between the parse and the extract stage, the model reads the images. At the end, ingest writes an ingest report.
+
+### Stage 1: Parse
+
+The parser does not use the model. It reads the EPUB file. An EPUB file is a ZIP file with XHTML files, a reading order (the spine), and a table of contents.
+
+The parser does these steps:
+
+1. Read the files in the order of the spine. Thus, the parser also reads files that the table of contents does not list.
+2. Classify each file: front matter, chapter, appendix, glossary, index, or back matter. Chapters and appendices become sections. The glossary and the index go into the checklist (see stage 3).
+3. Split each chapter into sections at its headings. If a long section has no subheadings, split it by size.
+4. Convert each section to Markdown with `turndown` and its GFM plugin (for tables).
+5. If the EPUB file has a page list, record the page breaks.
+
+The parser keeps these parts of the text:
+
+- Headings, paragraphs, and lists.
+- Tables and code blocks.
+- Notes, tips, and warnings (asides).
+- Footnotes.
+- Figure captions and the alternative text of images.
+
+The parser keeps the data of each image in a format that a model can read: PNG, JPEG, GIF, and WebP. The model reads these images after the parse. See "Stage 1b: Images".
+
+### Stage 1 for PDF files
+
+The PDF reader uses `pdfjs-dist`. It reads only tagged PDF files. A tagged PDF has a structure tree with headings, paragraphs, lists, tables, and figures, as HTML has. Word and many publishing tools make tagged PDF files.
+
+The reader does these steps:
+
+1. Read the outline (the bookmarks). The outline gives the chapters and the sections, with the page and the position of each one.
+2. For each page, join the text of each structure element. The font names show bold, italic, and code text.
+3. Write each page as XHTML. Then the steps for EPUB files continue: blocks, chapters, sections, and the checklist.
+
+The reader also does these things:
+
+- It removes running headers and footers, because a tagged PDF marks them as artifacts. A page number in the footer becomes the print page label.
+- It joins consecutive lines of code into one code block, and it keeps the indentation.
+- It joins a paragraph that continues on the next page.
+- It joins a chapter label with the chapter name in the outline, for example "CHAPTER 1:" and "SQL Interview Questions".
+- It finds the image of each figure. pdf.js draws the image inside the marked content of the figure, so the marked content id connects the two. The reader saves the image as a PNG file, with a longest side of 1568 pixels or less.
+- It compares the words of each page with the words of the result, and reports the pages that lost text.
+
+An untagged PDF has only text at positions on the page. Many LaTeX books and all scanned books are untagged. The reader stops with a clear message for these books.
+
+The parser checks its own output:
+
+- It counts the words in each XHTML file and in the Markdown result. A large difference means lost text, and the parser records a warning.
+- It records empty sections.
+- It records files that belong to no chapter.
+
+### Stage 1b: Images
+
+Some books show code, tables, or query results as images. Without the content of these images, a lesson misses the main example of a section.
+
+The model reads each image of the chapters one time. The result has one of three kinds:
+
+- Code: the text of the code. It becomes a code block in the section.
+- Table: a Markdown table in the section.
+- Other: a description of one sentence, for example "[Image: A diagram of the three states of a file]".
+
+The result replaces the image in the section. A line before code or a table tells the reader that the tutor read it from an image, because the model can make an error. A code block or a table cannot go into a table cell, so an image in a table cell keeps its placeholder.
+
+The results go to `work/images.json` in the folder of the book. The key of each result is a hash of the image, so each image costs one model call only one time. The `--fresh` option does not remove these results.
+
+If three calls fail in a row, the model probably does not accept images, and the reading stops. Then the sections keep the placeholders, and the command shows a warning. A later run reads the other images. An image larger than 4 MB keeps its placeholder.
+
+The parse report shows a warning with the number of images that have no text.
+
+### Stage 2: Extract
+
+The model reads one chapter at a time. For a chapter with more than about 30,000 tokens, the model reads groups of sections.
+
+The output has one entry for each section of the chapter. Each entry lists the concepts that the section teaches. A section without a new concept must give a reason, for example "introduction", "summary", or "exercises". The code checks that each section has an entry. If an entry is missing, the code asks the model again for that section.
+
+Each concept has the properties from "Concept map" and a short quote from its source section. The code checks that the quote is in the text of the section. Thus, the model cannot add a concept that is not in the book. If the quote is not in the text, the code asks the model one more time. Then it records a warning.
+
+The prompt contains the size rule and a second rule. A doubtful small idea goes into the concept that it belongs to, or ingest leaves it out.
+
+The cache key of a chapter contains the version of the extract and review prompts. A change of these prompts changes the version, so that the cache does not give the concepts of the old prompts.
+
+### Stage 3: Review
+
+The author of the book shows what is important. The parser collects these signals into a checklist for each chapter:
+
+- Defined terms: the text in `<dfn>` tags, and bold terms in paragraphs.
+- The glossary entries.
+- The index entries. If the index has links, each entry points to its section.
+- The items of summary, objective, and "key takeaways" sections.
+
+After the extraction, the code compares the checklist with the concepts of the chapter. Then the model gets the chapter text, the concept list, and the checklist items that match no concept. The model does these things:
+
+- It maps each item to an existing concept, adds a new concept for it, or marks it "minor" with a reason.
+- It adds a main idea of the chapter that no concept covers, with a quote. It does not add a small idea, or an idea in other words.
+
+This second look at each chapter finds the main concepts that the first look missed.
+
+### Stage 4: Merge
+
+The merge step adds the concepts of the book to the concept map of the subject:
+
+- If a new concept and an existing concept are the same idea, also in other words, the merge step joins them. The existing concept gets one more source.
+- Two new concepts of one chapter can be the same idea too. Then the later concept joins the earlier one.
+- It adds each other new concept to the correct module, or it makes a new module.
+- It sets the prerequisites and the level of each new concept.
+
+The merge step does not change or delete existing concepts. Thus, a new book does not change the progress of the user.
+
+In the merge step, the model gets only the names and objectives of the concepts, not the book text. This keeps the merge call small.
+
+### Ingest report
+
+After ingest, the tutor writes a report for the book. In phase 3, the book page shows it:
+
+- The parse warnings: lost text, empty sections, and files outside of chapters.
+- The number of sections and concepts in each chapter.
+- The sections without a concept, with the reason.
+- The checklist items with the mark "minor".
+- The concepts with a quote that the code did not find.
+
+Later, the report gets two actions. Phase 3 does not have them:
+
+- Add as concept: the model writes one concept for a "minor" item or for a section without a concept. Then the merge step adds the concept to the concept map.
+- Run again: ingest runs the extract and review stages again for one chapter, with no cache. Then the merge step adds the new concepts. The section rows keep their IDs. The run adds concepts and sources. It does not remove a concept or change the progress of the user.
+
+The report shows the gaps, and the user decides what to fix.
+
+### References
+
+A reference gives the book, the chapter title, and the section title. If the EPUB file has a page list, the reference also gives the page of the print book.
+
+### Refresh a book
+
+A change to the parser, for example a fix for code blocks or the image texts, changes the text of the sections. `npm run refresh -- <subject> <book>` gives an ingested book the new parse:
+
+1. Parse the book again with the current parser.
+2. Read the images that are not in the cache, but only in the chapters with concepts. A book can have concepts from some chapters only, after `ingest --chapters <list>`. Ingest reads the images of the other chapters when it ingests them.
+3. Check that each section of the new parse has its row in the database, with the same file. If one section does not match, stop and change no section.
+4. Write the section files and the word counts of the sections.
+
+The ids of the sections stay, so the concepts, the progress, the lessons, and the test answers do not change. The command lists the concepts with a lesson from the old text. "Teach it again" writes a new lesson from the new text.
+
+A parser change that splits a book into different sections makes the check fail. Then only `ingest --replace` can update the book. It removes the book row, so all sections get new ids, and the references of the old lessons break.
+
+### Ingest test (later)
+
+To measure ingest, select one chapter and write a list of its concepts by hand. A script runs ingest on the chapter and lists the concepts that ingest missed. Run the script after each change to the ingest prompts, and after each change of the model.
+
+## Select
+
+The user marks concepts on the map screen. The map has one page for all modules. The user marks only the concepts that the user selects. Thus, the user does not take a long test at the start.
+
+Each concept row has these buttons:
+
+- "Learn now": the concept goes to the top of the study queue, and its lesson opens.
+- "Add to the queue": the concept goes to the end of the study queue.
+- "Test it": the tutor starts a diagnosis of this concept.
+- "Skip": the concept becomes `skipped`.
+
+A skipped concept has an "Undo" button next to its status. A concept with a lesson (`learning` or `mastered`) has one button that opens the lesson.
+
+To mark many concepts in one step, the user selects their checkboxes. Each module heading has a "Select all" button. The selection can include concepts from different modules. A concept with a lesson has no checkbox, because its actions are on the lesson page.
+
+If the selection is not empty, a bar at the bottom of the page shows these buttons:
+
+- "Test them": the tutor tests all selected concepts in one diagnosis.
+- "Add to the queue": the selected concepts go to the end of the study queue.
+- "Skip": the selected concepts become `skipped`.
+
+The buttons send marks to the server. One request can mark concepts from all modules of the subject. The marks have these effects:
+
+- Test: the tutor tests the concept in a diagnosis. All concepts with the mark "Test" in one request go into one diagnosis.
+- Learn: the concept goes into the study queue directly, without a test. A concept in the queue keeps its place.
+- Skip: the concept becomes `skipped`.
+- Later: the concept goes back to `new`. The "Undo" button of a skipped concept sends this mark.
+
+A diagnosis of concepts from one module shows the name of the module. A diagnosis of concepts from different modules has no module.
+
+## Diagnose
+
+For each concept with the mark "Test", the tutor asks 1 or 2 questions. The model decides. Each concept gets a short answer or an apply question. A concept with more than one part to check also gets a multiple-choice question. Thus, a guess cannot pass, and a simple concept costs only one answer.
+
+Each concept gets one of two results: `known` or `failed`.
+
+The tutor keeps each answer at once. The results come only at the end of the diagnosis. Thus, the user can leave a diagnosis and continue it later:
+
+- The subject screen and the concept map show each diagnosis that did not finish, with the number of answers and the "Continue the diagnosis" button.
+- "Test it" or "Test them" for a concept in an open diagnosis opens that diagnosis. The model writes no new questions, and the answers stay.
+- A concept with a new mark, for example "Learn" or "Skip", leaves the open diagnosis, with its questions and answers. A diagnosis with no concept left goes.
+- At the end of a diagnosis, a concept that the user marked again keeps the new mark.
+
+## Choose
+
+After the diagnosis, the results screen shows each concept:
+
+- A passed concept becomes `known`. The user can still mark it "Learn" to study it.
+- A failed concept shows the questions that the user got wrong. It has a control with two marks: "Learn" and "Skip". The default is "Learn".
+
+The "Done" button sends the choices. Each "Learn" concept goes to the end of the study queue.
+
+## Study queue
+
+The study queue is an ordered list of the concepts that the user wants to learn. Each subject has one queue. The tutor always teaches the first concept in the queue.
+
+The tutor suggests an order with these rules:
+
+1. A prerequisite comes before the concepts that need it.
+2. Then the module order.
+3. Then the level, from `basic` to `advanced`.
+
+The queue screen gives the user these tools:
+
+- Drag a concept to a new position, with the mouse, a finger, or the keyboard.
+- The "Top", "Up", and "Down" buttons move a concept.
+- The "Later" button takes a concept out of the queue and sets it back to not started.
+- The "Skip" button skips a concept.
+- Two equal options put the full queue in an order. Each option is a card with a button and a hint. If the queue already has the order of an option, the card shows "in use" in place of the button.
+  - "Use the suggested order" applies the order of the tutor.
+  - "Use the book order" puts the queue in the order of the sections in the books. The books come in the order of ingest. A concept with more than one source takes the place of its first section. A concept with no source goes to the end.
+- The "Start now" button moves a concept to the top and opens its lesson.
+
+The tutor does not block the order of the user. But it shows a warning on a concept with a prerequisite that is not `known` or `mastered`. Before such a lesson starts, the tutor offers three actions: "Learn the prerequisite first", "Test the prerequisite", or "Continue". The user selects one.
+
+## Teach
+
+The model gets these inputs:
+
+- The concept and its objective.
+- The text of all source sections for the concept, from all books of the subject.
+- The wrong answers of the user in the diagnosis, for a concept that the user tested. The lesson can then address the specific mistakes.
+
+The model writes the lesson in one call. The lesson contains these parts:
+
+- An explanation in plain words.
+- One example. A complex concept can have a second example. The model selects the type of example from the sources, for example a query, a code sample, or a worked case.
+- The common mistakes: 0 to 4 points. The model writes only the mistakes that learners really make. If there is no such mistake, the lesson has no list.
+- A summary of 1 or 2 sentences, only in a lesson of more than 600 words.
+- The references: book, chapter, section, and a short quote.
+
+The length of the lesson follows the concept. A simple concept gets about 150 to 300 words. A complex concept gets up to 1200 words. The prompt has no minimum length and no fixed number of parts, because these make the model add filler. A short lesson also costs less, because the model writes fewer output tokens. The app shows each lesson as formatted Markdown.
+
+After the lesson, the user can ask questions in a chat box below the lesson. The model answers with the same sources in the prompt. Then the user clicks "Test me".
+
+If the lesson was not clear, the user clicks "Teach it again". Then the model writes a new lesson round, from a different angle and with different examples. A concept in a lesson has the status `learning`. Only one concept of a subject has this status.
+
+Each reference contains the exact quote from a source section. The tutor checks each quote against the text of the section. Thus, each reference points to text that is in the book. Each provider makes references in a different way. See "Model".
+
+The lesson prompt tells the model to base the lesson on the sources. The model marks a fact or a claim that is not in the sources with "(not from the books)". These rules keep the marker useful:
+
+- The marker comes one time at the end of a paragraph or a list item, not after each sentence.
+- The model does not mark the standard behavior of a language or a tool, or the step-by-step explanation of an example.
+- If a source has an error or contradicts itself, the lesson says so in one sentence. Then it teaches the correct form.
+- A source can contain an image placeholder, for example "[Image]". The model does not guess the content of the image.
+
+The answers in the chat use the same rules.
+
+## Test
+
+A test has 1 to 5 new questions on the concept. The model selects the questions that fit the concept:
+
+- A simple concept gets one question.
+- A concept with more than one part gets one question for each part. Two questions do not test the same thing.
+
+The questions have these kinds:
+
+- Apply: a case or a task, for example write a query, predict a result, find an error, or choose a solution. The user writes the answer, and the grader scores it.
+- Explain: a short answer of one or two sentences, for an idea that a case cannot test.
+- Recall: a multiple-choice question. The model uses it only to test the recognition of something, for example a term or a rule.
+
+Each test has at least one apply or explain question, because a guess can pass a recall question. For a comparison of two things, the question asks the user to choose one of them for a case.
+
+The user types each answer. Thus, each question asks one thing, and a short answer is enough. The grader checks the understanding, not the completeness of the answer. A typo or a missing explanation does not lower the score.
+
+The limit of 5 questions is the constant `MAX_TEST_QUESTIONS` in `src/tutor/questions.ts`. The model selects the number of questions from the complexity of the concept.
+
+The model writes the questions from the sections of the concept. The prompt includes the questions that the user saw before, so that each test has new questions. If the user leaves a test before the end, "Test me" opens the same test again.
+
+To pass, the user must answer each question correctly.
+
+After an answer, the user can click "Retake the question". The tutor then removes the answers of the question and shows the empty question again. This also works in a diagnosis. After the results, the answers of the session do not change, because the results come from them.
+
+After a pass, the concept becomes `mastered` and leaves the queue. The results show the next concept in the queue, with a "Next lesson" button.
+
+For a simple concept, the user can click "Skip the test" on the lesson page. Then the concept becomes `mastered` and leaves the queue, with no model call. The lesson page shows the "Next lesson" button.
+
+After a fail, the tutor shows the wrong answers and offers these actions:
+
+- Teach again: a new lesson starts from the wrong answers. It uses a different example or a different book. Then the tutor gives a new test with new questions. This action is the default.
+- Later: the concept moves to the end of the queue.
+- Skip: the concept becomes `skipped`.
+
+After a fail, the concept stays `learning` until the user selects an action.
+
+After 3 fails on one concept, the tutor also offers "Test the prerequisites". A weak prerequisite is a frequent cause of repeated fails. This action sets each prerequisite to `to_test` and starts a diagnosis of the prerequisites.
+
+## Grader
+
+The grader scores short answers and apply answers. The model gets the question, the key points of a good answer, and the source section. It returns a score and the key points that the answer does not have:
+
+- 0: wrong.
+- 1: partly correct.
+- 2: correct.
+
+Only a score of 2 counts as correct.
+
+The user can dispute a grade with a button. A disputed answer counts as correct, and the tutor records the case. Use the recorded cases to improve the grader prompt.
+
+The tutor does not run the code of the user. The model reads the code and grades it. If a grade looks wrong, the user can run the code and dispute the grade.
+
+## Review board (phase 2)
+
+The review board shows what the user learned, at a glance. The user decides what to read again or to test again. The tutor has no review schedule and makes no model call for the board.
+
+The board has three uses:
+
+- See the status of each concept of a subject on one or two screens.
+- Find a concept that the user forgot. Open its lesson, read it again, and test it again with "Test me again".
+- Keep a list of the most important concepts of the books, with stars.
+
+### The board
+
+The board is a tab of each subject, after "Study queue". The tab label is "Review board".
+
+- A summary line at the top gives the number of concepts in each status group and the number of starred concepts.
+- The concepts are in their modules, in the order of the concept map. Each module heading shows how many of its concepts are `known` or `mastered`. Skipped concepts do not count, as in the progress of the subject.
+- Each concept has one short line: the status mark, the name, and the star button. The line has no goal, no sources, and no level.
+- A click on the name opens the lesson page of the concept.
+
+The board uses the data of the concept map request. It needs no new read endpoint.
+
+### Filters
+
+- Status filter: the user selects one filter at a time. Each filter shows its count. The count also follows the star filter and the search. These are the filters:
+  - All.
+  - Learned: `known` and `mastered`.
+  - Learning: `learning`.
+  - In the queue: `queued`.
+  - Not chosen: `new`, `to_test`, and `failed`.
+  - Skipped: `skipped`.
+- Starred: a toggle. It works together with the status filter. For example, "Learned" and "Starred" give the list of the key concepts that the user learned.
+- Find: a search box for the concept name.
+
+The address of the page keeps the filters. Thus, a link or a bookmark can open the list of starred concepts. A change of a filter does not add an entry to the history of the browser.
+
+### Test me again
+
+The lesson page of a `mastered` concept has the "Test me again" button. The user reads the lesson again, then tests the concept again.
+
+- The test uses the questions of the last finished test of the concept again. The options of the recall question come in a new order. The test is ready at once, with no model call to write questions.
+- If the concept has no finished test, for example after "Skip the test", the model writes new questions, as for "Test me".
+- The pass rule is the same as for each test. A pass keeps the concept `mastered`.
+- After a fail, the concept stays `mastered`. The results offer the usual actions. "Teach it again" writes a new lesson now. "Later" puts the concept at the end of the study queue. "Skip" skips the concept.
+
+### Stars
+
+The user stars the important concepts. The star has no effect on the status or on the queue. A concept keeps its star after a test, a new lesson, or a skip.
+
+The star button is on the board line, in the header of the lesson page, and on the concept row of the concept map. One click adds the star, and one more click removes it.
+
+## Ingest in the app (phase 3)
+
+Now, ingest runs only from the command line. Phase 3 moves ingest into the app, so that the user adds a book with no terminal. Phase 4 needs this change, because the book files are on the laptop and the tutor is on the server.
+
+The commands stay. The app and the commands use the same ingest code. Milestone 16 in `PLAN.md` adds books from files. Milestone 18 adds online books. Milestones 17 and 19 add YouTube videos: first the command, then the app. See "Videos (phase 3)".
+
+### Create a subject
+
+The home screen has a field to create a subject. The user types a name, and the tutor creates an empty subject. Then the subject screen opens. A subject with no books shows only the "Add a book" and "Add an online book or video" buttons.
+
+### The book page
+
+Each book has its own page, at `#/subjects/<subject>/books/<book>`. The page has three states:
+
+- Plan: the chapters of the book, with checkboxes, and the buttons that start a run.
+- Run: the progress of the run, with the "Stop" button.
+- Report: the result of the last run.
+
+The plan and the report have too many parts for the subject screen, so they get their own page. The page gets its state from the server, so a reload shows the same state.
+
+### Add a book
+
+The user adds a book in this order:
+
+1. On the subject screen, the user clicks "Add a book" and selects an EPUB file or a tagged PDF file.
+2. The browser sends the file to the server as the body of one request. Thus, the server needs no package for multipart uploads.
+3. The server parses the file. The parse uses no model, so it costs nothing.
+4. The server keeps the file in the folder of the book, as the command does. The tutor has no folder for uploads.
+5. The book page opens in the plan state.
+
+The upload route accepts a file of up to 200 MB.
+
+If the parser cannot read the file, for example an untagged PDF file, the app shows the message of the parser. Then the app offers no run.
+
+If the subject has a book with the same title already, the server keeps the old file. The book page of that book opens, as for "Add chapters". To replace a book, use `npm run ingest` with `--replace`.
+
+### The plan
+
+The plan shows these parts:
+
+- The title and the format of the book, and the parse warnings.
+- One row for each chapter: a checkbox, the number, the title, the sections, the words, the images, and the model requests.
+- The name of the model from `.env`.
+- The "Preview" and "Save" buttons, with the number of model requests for the selected chapters.
+
+The checkboxes start empty, because a run costs money. "Select all" selects each chapter without concepts. A click on a button starts the run at once. The button shows the number of requests, so the app asks no more questions.
+
+The number of requests of a chapter includes the images to read, the extract and review stages, and the merge. A chapter in the cache needs only the merge request. The server sends the number for each chapter, and the app adds up the numbers of the selected chapters.
+
+If `.env` has no model, the plan shows the message about the model. Then the app shows no start button.
+
+### Preview and save
+
+The app has two types of run. Both types run on the selected chapters:
+
+- Preview: ingest does not change the database. The report shows the preview concept map.
+- Save: ingest saves the result. The concept map shows the new concepts at once. The chapters of an earlier preview come from the cache and cost nothing.
+
+Thus, the user can study a book one part at a time in the app, as with `--chapters` in the command.
+
+These options stay in the command only:
+
+- `--sections`, for a chapter that is too large for one run. Such chapters are rare.
+- `--fresh` and `--replace`. They remove earlier results, and the user needs them only to repair a book.
+
+A subject can get a second book in phase 3, because the merge step exists already. Phase 5 tests the merge on real books and makes it better.
+
+### Add chapters
+
+The folder of the book keeps a copy of the book file. Thus, the user adds more chapters to a book with no new upload.
+
+On the subject screen, each book with chapters without concepts has the "Add chapters" button. The button opens the book page in the plan state. A chapter with concepts shows "Has concepts" and has no checkbox. To ingest such a chapter again, use the command with `--replace`.
+
+A chapter with concepts from some sections only, after `--sections`, also counts as a chapter with concepts. The command adds the other sections of that chapter.
+
+Before the plan of a saved book, the server parses the copy again. Then it compares the sections with the rows in the database, as a run with some chapters does. If they do not match, the plan shows the message and offers no run. This can occur after a parser change that splits the book into different sections. Then only `npm run ingest` with `--replace` can update the book.
+
+### Progress
+
+Ingest of a full book takes a long time. Thus, ingest runs in the background, in the server process, as the preparation of a diagnosis does. The tutor has no job queue.
+
+- The table `ingests` keeps each run, with its status and its progress. See "Data model".
+- The book page shows the current step, a progress bar, and the "Stop" button. The app asks the server for the progress every 2 seconds.
+- A step is one model request. Thus, the progress bar moves after each request, also in a long chapter. The estimate of the requests gives the total.
+- The subject screen shows a run in progress as one line, with a link to the book page.
+- "Stop" ends the run after the current image, chapter, or merge. The image texts and the finished chapters stay in the cache. Thus, the next run does not pay for them again.
+- The merge results have no cache. If the user stops a run in the merge stage, the next run pays for the merge requests again.
+- Only one run is in progress at a time, in all subjects. Two runs on one subject can overwrite the merge result of each other.
+- The user can study during a run. A run only adds concepts and sources, so it does not change the progress of the user.
+- The tutor does not delete a subject during a run on that subject.
+- If the server stops during a run, the run becomes `failed` at the next start. A new run continues from the cache.
+- A save run saves the book, its sections, and the concept map in one transaction at the end, as now. Thus, a run that fails or stops does not change the concept map.
+
+### Ingest report in the app
+
+After a run, the book page shows the report of the run. The section "Ingest report" gives the content. The book page also shows the table of chapters that the command prints. The app reads the report from the `ingest-report.json` file of the book. After a preview, the app reads `ingest-report.preview.json`.
+
+The report of a preview also shows the preview concept map from the `concept-map.preview.md` file. It has two buttons:
+
+- "Save these chapters" starts a save run of the same chapters. The chapters and their images come from the cache, so the run makes only the merge requests.
+- "Change the chapters" opens the plan.
+
+After a save run, the report has a link to the concept map.
+
+The actions "Add as concept" and "Run again" come later. See "Ingest report".
+
+The app does not offer a full replace of a saved book. A replace removes the book row, and all sections get new IDs. Then the old lessons and the old questions lose their sections.
+
+### Online books
+
+`npm run fetch` downloads an online book into an EPUB file. Milestone 18 adds the same function to the app. The user adds an online book in this order:
+
+1. On the subject screen, the user clicks "Add an online book or video". The page "Add an online book or video" opens, and the user types the address.
+2. The server finds the table of contents. For a site with no `llms.txt` file, this needs one model request. The app waits for the answer, as for a new lesson.
+3. The app shows the title, the chapters with their number of pages, and the estimated time. Each chapter has a checkbox. All chapters start selected, as in the command.
+4. The user clicks "Download". The download is a run in the background, with the progress and the "Stop" button.
+5. The server writes the EPUB file to `data/web/`, as the command does.
+6. Then the server continues as for an uploaded file: the parse, the copy in the folder of the book, and the plan.
+
+A second field of the form is optional. It takes the address of a page with the full table of contents, as `--toc` does.
+
+The form and the chapters have their own page, at `#/subjects/<subject>/online`. A large site has too many chapters for the subject screen, as a book has too many parts for its plan. The server keeps no state between the table of contents and the download, so the app sends the table of contents back with the selected chapters. The server checks that each page is in the scope.
+
+If `data/web/` has a file with the same title, the app offers two buttons: "Use the downloaded file" and "Download again".
+
+The download obeys the same rules as the command: one request at a time, a pause of 1 second, and `robots.txt`. A download is a run, so the rule of one run at a time applies to it too.
+
+"Stop" ends the download after the current page or image. A stopped download writes no EPUB file.
+
+The book page shows the skipped pages of the download above the plan.
+
+## Videos (phase 3)
+
+Many good courses exist only as videos, most of them on YouTube. A user can listen to a video course, but with no tests the user keeps little of it. The tutor turns a YouTube video or playlist into a book. Then the user studies it as any other book.
+
+The tutor writes the video as an EPUB file in `data/web/`, as for an online book. Parse, ingest, lessons, and tests read the EPUB file as a usual book. Their code does not change.
+
+Milestone 17 in `PLAN.md` adds the command. It needs nothing from the online books in the app. Milestone 19 adds videos to the app, after milestone 18 adds online books to the app.
+
+### What becomes a book
+
+The user gives the address of one video or of one playlist. Only YouTube addresses work.
+
+- One video of up to 30 minutes: the video is one chapter, and its YouTube chapters are its sections. Thus, ingest reads the full video in one request, and the same idea does not come back as a concept in each small chapter.
+- One longer video: each YouTube chapter of the video is a chapter of the book.
+- A playlist: the playlist is the book. Each video is a chapter. The YouTube chapters of a video are its sections.
+- A video with no YouTube chapters is one chapter. The parser splits it into sections by size, as for a long section of a book.
+
+The title of the book is the title of the video or of the playlist. The author is the name of the channel.
+
+For a playlist, the user selects the videos, as for the chapters of an online book. One video has no selection, because each request contains the full video. See "The request".
+
+### The video model
+
+The tutor does not download the video. It sends the YouTube address to a model that reads YouTube videos directly. The model hears the speech and sees the screen. Thus, one request gives the transcript and the code on the screen.
+
+Now only Google Gemini models read YouTube addresses. The user selects one of two providers for the video model:
+
+- `openrouter`: OpenRouter passes YouTube addresses to Gemini. The user needs no Google account, and one key serves the main model and the video model. The model name has the form `google/<model>`, for example `google/gemini-3.8-flash`.
+- `google`: the Gemini API of Google, with a Gemini key from Google AI Studio. The model name has no prefix, for example `gemini-3.8-flash`.
+
+The video model is a second model, in addition to `LLM_MODEL`. The Claude models and most other models do not accept audio or video, so the main model often cannot do this work. With `LLM_PROVIDER=google`, the main model is a Gemini model too. The tutor still uses `VIDEO_MODEL` for videos, and one `GEMINI_API_KEY` serves the two models.
+
+```
+VIDEO_PROVIDER=      # openrouter or google
+VIDEO_MODEL=         # a Gemini model, in the form of the provider. The README names the models that we tested.
+OPENROUTER_API_KEY=  # for openrouter
+GEMINI_API_KEY=      # for google
+```
+
+The tutor has no default video provider and no default video model. If `VIDEO_PROVIDER`, `VIDEO_MODEL`, or the key of the video provider is empty, a video step stops with a clear message. Books from files and online books do not need the video model.
+
+### The request
+
+The tutor makes one request for each video. The request has these parts:
+
+- The YouTube address, with the processing mode `static`. In this mode, Gemini takes one frame for each second, and all of the audio. For `openrouter`, the address goes into a `video_url` part of a chat request. For `google`, it goes into a `video` part of a request to the Interactions API of Gemini (`/v1beta/interactions`).
+- A prompt with the rules of the transcript.
+- The reasoning level `low`. A transcript needs no reasoning.
+- A maximum number of output tokens from the length of the video: 700 tokens for each minute, plus 1,000, and at most 65,536.
+
+OpenRouter cannot send a part of a video to Gemini. Thus, each request contains the full video, and the user cannot select the chapters of one video. The Gemini API has clip offsets (`start_offset` and `end_offset`), but its documentation shows them only for uploaded files. Thus, the first version uses the full video with both providers. See "Open questions".
+
+The rules of the transcript:
+
+- Write the exact words of the speaker. Do not summarize, shorten, or add words. Remove only filler sounds such as "um".
+- Start a new paragraph at each change of idea, or after 30 to 60 seconds. Begin each paragraph with its start time, for example `[4:05]` or `[1:04:05]`.
+- When the screen shows code, a command, a table, or a slide with text, write its content at that point. Use a code block for code and a Markdown table for a table. If the code changes, write the new version.
+- When the speaker defines a term, write the term in bold one time. The parser takes bold terms into the checklist, as for a book. See "Stage 3: Review".
+- Write only the transcript.
+
+The prompt does not ask for chapter headings. The paragraph times are more exact than the headings of the model. A paragraph lasts until the next paragraph starts. The tutor puts each paragraph into the chapter that holds the larger share of its time. A paragraph often starts some seconds before a YouTube chapter, with the first words of that chapter. In the test video, a rule by the start time put such a paragraph into the wrong chapter.
+
+### Checks of the transcript
+
+The model can stop early, skip a part, or invent text. Thus, the tutor checks each transcript:
+
+- The finish reason is `stop`. A transcript that reached the token limit fails.
+- Each paragraph has a start time, and the times do not go back.
+- No gap between two paragraphs is longer than 3 minutes.
+- The last paragraph starts near the end of the video: less than 2 minutes or 10% of the length before the end, whichever is larger.
+
+If a check fails, the tutor tries one more time. If the second transcript also fails, the tutor skips the video and shows the reason in the report.
+
+The checks find a short transcript. They do not find wrong words or wrong code. In a test with a 12-minute video, the words matched the YouTube captions at 96%. Almost all differences were errors in the captions, for example "load a shiaa" for "lodash".
+
+All code blocks and tables in a transcript come from the screen. Thus, the tutor puts a note before each one, as for the code of an image: "_The tutor read this code from the video:_". The lesson model sees the note and can correct a small error in the code.
+
+### The cache
+
+A transcript costs money. The tutor keeps each transcript that passes the checks in `data/web/transcripts/<video id>.json`, with the model name and the date. A later download of the same video uses the file and makes no request, for example in a larger playlist. To get a new transcript of a video, delete its file.
+
+### The EPUB file
+
+- Each chapter is one XHTML file, and each section is a `<section>` with an `<h2>` heading, as for an online book.
+- Each paragraph starts with a link to its time in the video, for example `[12:34](https://www.youtube.com/watch?v=<id>&t=754s)`. See "Watch the video at a reference".
+- `dc:source` keeps the address of the video or of the playlist. `dc:date` keeps the date of the download.
+- The title gives the file name, as for an online book.
+
+The transcript is Markdown. The tutor converts it to XHTML with `marked`, as `fetch` does for the Markdown pages of `llms.txt`.
+
+### yt-dlp
+
+Before the requests, the tutor needs facts about the videos: the title, the channel, the length, and the YouTube chapters. For a playlist, it also needs the list of videos. The tool yt-dlp reads these facts from YouTube. The tutor uses yt-dlp only for these facts. It downloads no captions, no audio, and no video with it.
+
+The user does not install yt-dlp:
+
+- At the first use, the tutor downloads the single-file program of yt-dlp from the GitHub releases of yt-dlp into `data/bin/`. It selects the file for the system of the user.
+- YouTube changes often, and old versions of yt-dlp stop working. If the last update of the program is more than one day old, the tutor updates it before the download.
+- yt-dlp needs a JavaScript runtime for some YouTube pages. The tutor gives it Node.js with `--js-runtimes node:<path>`, because Node.js runs the tutor already. Thus, the user does not install Deno.
+
+If yt-dlp fails, the command shows the message of yt-dlp. Often a later update of yt-dlp repairs the problem.
+
+The first version does not use the captions of YouTube. YouTube blocks more and more caption downloads. Also, the automatic captions have no punctuation and many wrong technical words.
+
+### Cost
+
+In the mode `static`, Gemini counts about 100 input tokens for each second of video. The output is about 550 tokens for each minute. The 12-minute test video cost $0.073 with `google/gemini-3.8-flash` on OpenRouter. Thus, one hour of video costs about $0.37 with this model. On 2027-01-01, Google doubles the price of this model.
+
+With `google`, YouTube addresses are a free preview now. The free tier allows up to 8 hours of YouTube video a day, and the paid tier has no limit. On the free tier, Google uses the requests to improve its products. A request contains only a public video and the prompt. Google can end the preview at any time.
+
+Before the download, the tutor shows the total length of the selected videos. For `openrouter`, it also shows an estimate of the cost, from the public model list of OpenRouter. For `google`, it shows no cost, because Google has no price list for programs to read.
+
+Then ingest costs the same as for a book of the same size. One hour of speech gives about 10,000 to 13,000 words.
+
+### Videos in the app
+
+Milestone 19 adds videos to the "Add an online book" form of milestone 18. The button becomes "Add an online book or video".
+
+- For a YouTube address, the server reads the facts with yt-dlp, not a table of contents. The field for a table of contents does not apply.
+- The facts need no video model. With no video model, the page shows the facts and the message about the video model, and no "Download" button.
+- For a playlist, the app shows the videos with checkboxes, their lengths, and the cost estimate. For one video, it shows the chapters with no checkboxes.
+- The server sends the cost of one second of video. The app multiplies it by the length of the selected videos that are not in the cache.
+- The download is a run with the mode `fetch`, as for an online book. Each video is one step, for example "Transcribing video 2 of 5". "Stop" ends the run after the current video.
+- At the start of the run, yt-dlp reads each selected video again, for its chapters and its length. A playlist does not always give the length. The report shows a video that yt-dlp cannot read, or a video that is too long, with the reason.
+- The finished transcripts stay in the cache. A stopped run writes no EPUB file.
+- Then the server continues as for an online book: the parse, the copy in the folder of the book, and the plan.
+
+### Watch the video at a reference
+
+The app shows the YouTube player at the point of each reference to a book from a video. The time links of the transcript give the video and the time, so the tutor needs no new data.
+
+- The server finds the paragraph where the quote of a reference starts, and sends the video id and the time of that paragraph. The concept map, the lesson, and the section get this point. A source of a book file or of an online book has no point.
+- A quote can go across some paragraphs, for example a code block and the next paragraph. The note before each code block is the same, so the server looks for the full quote, not only its first words.
+- "Read the section" shows the player above the text. A click on a time link in the text moves the player to that time.
+- On the concept map and in the references of a lesson, "Watch from 4:05" opens the player under the quote. The player loads only after the click, so that a page with many references stays fast. Only one player plays at a time.
+- The player comes from `youtube-nocookie.com`, which sets no cookies before the user plays the video. The terms of YouTube allow this player.
+- Some owners do not allow the player in other apps. The link "Open the video on YouTube" stays under the player.
+
+### Limits of the first version
+
+- Only YouTube addresses, and only public videos. Gemini does not read unlisted or private videos.
+- A video can be 90 minutes long at most. The output limit of the model, 65,536 tokens, cannot hold the transcript of a longer video. In a playlist, the tutor shows a longer video as "too long" and offers no checkbox for it.
+- No other video sites, and no video files from the disk.
+
+A later version can read longer videos with the processing mode `agentic`. In this mode, Gemini moves in the video by itself, so one request can transcribe one YouTube chapter. This needs a test first. See "Options" in `PLAN.md`.
+
+### Responsibility
+
+The terms of YouTube do not allow downloads with other tools. Each user runs their own copy of the tutor, and takes the responsibility for the videos and the transcripts. The transcripts stay in `data/`, which is not in git. The README says this.
+
+## Self-hosted release (phase 4)
+
+Phase 4 makes the tutor ready for other people to run. The tutor is free and open source on GitHub. Each user runs their own copy, with their own books and their own API key. Then the user can learn on each device, for example a phone or a second computer.
+
+The project offers no public hosted version. A hosted service stores the text of books that its users bought, and sends the text to model providers. One developer cannot carry this copyright risk.
+
+Each copy of the tutor stays an app for one user.
+
+### Where a user can run the tutor
+
+- Laptop: `npm start`, as now. This needs no Docker and no login.
+- Laptop or home server, with Tailscale: Tailscale connects the devices of the user in a private network. The phone reaches the tutor with no public address.
+- Rented server: any virtual private server (VPS) with Docker. The compose file of the tutor does the full setup. See "Compose file".
+- Server with a reverse proxy already, for example Traefik: the user runs the image behind the existing proxy.
+- Platforms with a persistent disk, for example Fly.io, Railway, or Render. Self-hosted platforms such as Coolify or Dokku can also run the compose file.
+
+### Platforms that do not fit
+
+Serverless platforms such as Vercel do not fit the tutor:
+
+- They keep no files between requests. Thus, `tutor.db` and `data/` disappear.
+- They stop each request after a time limit. Ingest runs in the background for many minutes.
+- A port to such a platform needs a hosted database, file storage, and a job queue. This is a rewrite, and the tutor stays a light build.
+
+### Container image
+
+- A `Dockerfile` builds the image with Node.js 22. The image builds the app one time. On the laptop, `npm start` builds the app at each start, as now.
+- A GitHub Action builds the image for each release, for amd64 and arm64 processors. It publishes the image to the GitHub Container Registry (`ghcr.io`).
+- `better-sqlite3` is a native module. The published image has the build for each processor type, so the user builds nothing.
+- The image has a tag for each version and the tag `latest`. To stay on one version, set its tag in `compose.yaml`.
+- The image keeps the data in `/app/data`. A volume must hold this folder. Without a volume, the data disappears at the next update.
+- The image has no `.env` file. On a server, the `.env` file is next to the compose file. On a platform, the same values go into the environment variables of the platform.
+- The route `/health` answers without a login. The health checks of the platforms use it.
+
+### Compose file
+
+The repository has a `compose.yaml` file and a `Caddyfile`. Caddy is a web server that gets HTTPS certificates automatically. The compose file starts the tutor and Caddy.
+
+To run the tutor on a rented server:
+
+1. Install Docker on the server.
+2. Point a domain name to the address of the server.
+3. Copy `compose.yaml`, `Caddyfile`, and `.env.example` to the server.
+4. Copy `.env.example` to `.env`.
+5. In `.env`, set the model, the API key, `TUTOR_PASSWORD`, and `DOMAIN`.
+6. Run `docker compose up -d`.
+
+On a server with a reverse proxy already, remove the Caddy service from the compose file. Then connect the tutor to the existing proxy. The guide gives an example for Traefik.
+
+### Platform guides
+
+Each platform guide is a short file in `docs/deploy/`. If the platform needs a config file, the guide gives it. For example, Fly.io uses `fly.toml`.
+
+Write a guide only after a test deploy on that platform. Start with the compose file, then add one platform at a time.
+
+Each guide tells the user to do these steps:
+
+- Attach a persistent disk at `/app/data`. Free plans often have no persistent disk.
+- Run exactly one instance, because SQLite works with one process on one disk.
+- Turn off the automatic stop of idle machines. A stopped machine stops an ingest run.
+- Set the timeouts of the platform so that a long lesson request and a large upload can finish.
+
+### Login
+
+On the laptop, the server listens on localhost only, so it needs no login. On a server, other people can reach the tutor. It holds the text of books that the user bought, and each model request costs money. Thus, each request needs a login.
+
+- The new value `HOST` in `.env` sets the address of the server. The default stays `127.0.0.1`.
+- The new value `TUTOR_PASSWORD` in `.env` sets the password.
+- If `HOST` is not a localhost address and `TUTOR_PASSWORD` is empty, the server does not start. It shows a clear message.
+- The login page asks for the password. After a correct password, the server sets a login cookie for 30 days. The cookie is `HttpOnly`, `Secure`, and `SameSite=Strict`.
+- The server signs the cookie with a key from the password. Thus, a new password ends all logins.
+- After a wrong password, the server waits 2 seconds before it answers. This makes a password guess slow.
+- Each route needs the cookie, except the login page, the login request, and `/health`.
+- The tutor has no user accounts and no user table.
+
+### Data on the server
+
+After the move, the server has the only copy of the data. Do not use the tutor on the laptop with a second copy of `data/`. The two copies change in different ways, and the tutor cannot join them.
+
+To move the data:
+
+1. Stop the tutor on the laptop.
+2. Copy `data/` to the volume of the server, for example with `rsync`.
+3. Start the container. The migrations run at the start, as on the laptop.
+
+SQLite uses a write-ahead log (WAL), a second file with the recent changes. Thus, a plain copy of `tutor.db` can be incomplete. Make backups in this way:
+
+- The new command `npm run backup` writes a copy of `tutor.db` with the backup function of SQLite.
+- A daily cron job on the server runs the command in the container.
+- Copy the backups and the book folders to a second place, for example the laptop.
+
+### Updates
+
+On a server with the compose file:
+
+1. Make a backup, because a new version can run a migration.
+2. Run `docker compose pull` to get the new image.
+3. Run `docker compose up -d` to start the new version.
+
+On a platform, make a backup, then deploy the new image. The guide of the platform gives the steps.
+
+### Phone use
+
+The user can open the tutor on a phone. Check each screen at phone width, and correct the layout where necessary. Check the lesson, the test, the study queue, the review board, and the concept map first.
+
+### Long requests
+
+Some requests wait for the model, for example a new lesson. A book upload can also be large. Make sure that the timeouts of the proxy let these requests finish.
+
+### Before the repository becomes public
+
+- Scan the full git history for book text, for example in test fixtures or in copied model output. `data/` is not in git, but an old commit can contain an excerpt.
+- If the scan finds book text, remove it from the history before the release.
+- Select a license. See "Open questions".
+- The README tells the user that the project ships no books. Each user brings books that they own.
+- The README tells the user that each model request sends book text to the provider that the user selects.
+
+## Concept status
+
+- `new`: the user did not mark the concept yet.
+- `to_test`: the user marked it "Test". It waits for the diagnosis.
+- `known`: passed the diagnosis.
+- `failed`: failed the diagnosis. It waits for the choice of the user.
+- `queued`: in the study queue.
+- `learning`: the current concept in a teach and test loop.
+- `mastered`: passed a test after a lesson, or skipped the test.
+- `skipped`: the user skipped it. The user can undo this on the map screen.
+
+## Screens
+
+- Home: the list of subjects, with the progress of each subject. A field to create a new subject (phase 3).
+- Subject: the books of the subject and the progress. The "Next to learn" card opens the lesson of the first concept in the queue. In phase 3, the screen also has these parts:
+  - The "Add a book" and "Add an online book or video" buttons.
+  - The "Add chapters" button of each book with chapters without concepts.
+  - One line for a run in progress, with a link to the book page.
+- Book (phase 3): the plan, the progress of a run, and the ingest report of one book. See "The book page".
+- Online book or video (phase 3): the form for the address, and the chapters of the table of contents or the videos of a playlist, with their checkboxes. See "Online books" and "Videos in the app".
+- Map: the modules and concepts, with the status, the star, and the sources of each concept. Inside a module, a small heading starts the concepts of each chapter. Mark one concept with its buttons, or select many concepts and mark them in one step. Undo a skip here. A module on the subject screen opens the map at that module.
+- Diagnosis: the questions one at a time. Then the results, with the "Learn" and "Skip" choices.
+- Queue: the study queue, with drag and drop and the queue buttons.
+- Review board: one short line for each concept, with the status filters, the star filter, and the search. See "Review board".
+- Lesson: the lesson, the chat box, and the "Test me" and "Skip the test" buttons. The header has the star button. A `mastered` concept has the "Test me again" button.
+- Test: the questions, the results, and the actions after a fail.
+
+## Components
+
+```
+ Browser (React app)
+        │  HTTP on localhost, or HTTPS with a login on a server (phase 4)
+        ▼
+ [Server] ──► [Ingest] ──► data/subjects/<subject>/sections/ (Markdown)
+    │
+    ├──► [Tutor loop]: select, diagnose, queue, teach, test, board
+    │         │
+    │         ├──► [Grader]
+    │         └──► [Model client] ──► Anthropic, OpenAI, OpenRouter, or Google
+    │
+    └──► SQLite: subjects, books, concept map, progress
+```
+
+## Data model (SQLite)
+
+```sql
+subjects           (id, slug, name, created_at)
+books            (id, subject_id, title, file, status, created_at)
+sections         (id, book_id, chapter, number, chapter_title, title, page, path, words)
+modules          (id, subject_id, position, name)
+concepts         (id, subject_id, module_id, slug, name, objective, kind, level, status, queue_pos, starred)
+concept_sources  (concept_id, section_id, quote)
+concept_prereqs  (concept_id, prereq_id)
+questions        (id, concept_id, purpose, kind, text, choices, answer, key_points, section_id)
+attempts         (id, question_id, answer, score, feedback, disputed, created_at)
+lessons          (id, concept_id, round, text, refs, created_at)
+lesson_messages  (id, lesson_id, role, text, created_at)
+ingests          (id, subject_id, book, file, title, mode, chapters, status, done, total, step, result, error, created_at, source)
+```
+
+- `books.status`: `ingesting`, `ready`, or `failed`. The tutor saves a book only at the end of a save run, so a saved book is `ready`.
+- `sections.page`: the print page from the EPUB page list. For an EPUB file without a page list, it is empty.
+- `questions.purpose`: `diagnose` or `test`.
+- `questions.kind`: `choice`, `short`, or `apply`.
+- `concepts.status`: see "Concept status".
+- `concepts.queue_pos`: the position in the study queue. It is empty for a concept that is not in the queue.
+- `modules.position`: the number of the module in the book order. See "Concept map".
+- `concepts.starred`: 1 for a concept with a star, else 0.
+- `ingests` (phase 3): one row for each run in the app: an ingest or a download of an online book.
+- `ingests.book`: the folder name of the book, for example `pro-git`. The book page shows the last run of its book.
+- `ingests.file`: the book file, relative to `data/`. For a download, the new EPUB file in `data/web/`.
+- `ingests.mode`: `preview`, `save`, or `fetch`. The mode `fetch` is a download of an online book (milestone 18) or of a video (milestone 19).
+- `ingests.chapters`: the selected chapters, as a JSON list.
+- `ingests.status`: `running`, `done`, `stopped`, or `failed`.
+- `ingests.done` and `ingests.total`: the finished steps and all steps of the run. A step is one model request, or one page of a download.
+- `ingests.step`: the text of the current step, for example: Finding the concepts in chapter 4 of 12, "Joins".
+- `ingests.result`: for a download, the counts and the skipped pages or videos, as JSON. An ingest keeps its result in the report file.
+- `ingests.source`: the start address of a download, for example a YouTube address. The book page shows a video download with its own texts.
+- `ingests.error`: the message of a failed run.
+
+The concept map is in SQLite, because the merge step changes it for each new book. The section text stays in Markdown files.
+
+## Stack
+
+- TypeScript on Node.js, for the server and for the app.
+- Fastify for the HTTP server. On the laptop, the server listens on localhost only. On a server (phase 4), it needs a login.
+- React with Vite for the app in the browser.
+- SQLite with `better-sqlite3`.
+- `jszip` to read EPUB files, and `turndown` to convert XHTML to Markdown.
+- The Anthropic TypeScript SDK and the OpenAI TypeScript SDK (software development kits), behind one interface. See "Model".
+- zod for the JSON schemas and for the check of model output.
+- yt-dlp for the facts about YouTube videos. The tutor downloads the program by itself. See "Videos (phase 3)".
+
+The design has no Telegram bot, no job queue, no vector database, and no cloud services. In phase 4, the tutor runs in one container. The concept map links each concept to its sections. Thus, the tutor needs no search.
+
+## Model
+
+The tutor uses one model for all of its work. Videos are the only exception: they use a second model, `VIDEO_MODEL`. See "Videos (phase 3)". The user selects the model in the `.env` file, from one of four providers:
+
+- Anthropic: Claude models, through the Anthropic TypeScript SDK.
+- OpenAI: OpenAI models, through the OpenAI TypeScript SDK.
+- OpenRouter: models from many vendors, through the OpenAI TypeScript SDK. The OpenRouter API is compatible with the OpenAI API, so the client only changes the base URL to `https://openrouter.ai/api/v1`.
+- Google: Gemini models, through the OpenAI TypeScript SDK. The Gemini API has an OpenAI-compatible endpoint, so the client only changes the base URL to `https://generativelanguage.googleapis.com/v1beta/openai/`.
+
+An OpenRouter key or a Gemini key serves the main model and the video model. Thus, the user of one of these two providers needs only one key.
+
+```
+LLM_PROVIDER=        # anthropic, openai, openrouter, or google
+LLM_MODEL=           # the model name, exactly as the provider writes it
+LLM_REASONING=       # none, minimal, low, medium, high, xhigh, or max. Empty: the default of the model.
+OPENROUTER_PROVIDERS= # OpenRouter only: the providers that can serve the model, in order. Empty: OpenRouter selects.
+VIDEO_PROVIDER=      # videos only: openrouter or google
+VIDEO_MODEL=         # videos only: a Gemini model, in the form of the video provider
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+OPENROUTER_API_KEY=
+GEMINI_API_KEY=      # the Gemini API, for LLM_PROVIDER=google and for VIDEO_PROVIDER=google
+```
+
+OpenRouter sends each request to one of several providers that serve the model. The providers differ in speed, price, and quality. With `OPENROUTER_PROVIDERS`, the user selects the providers. The tutor sends them as the `order` list with `allow_fallbacks: false`, so no other provider gets the request.
+
+The tutor has no default model. The tutor sends `LLM_REASONING` to the reasoning setting of the provider. Each model accepts only some of the levels. If the model does not accept the level, the tutor shows the error message of the provider.
+
+If `LLM_PROVIDER`, `LLM_MODEL`, or the key of the selected provider is empty, a step that needs the model stops with a clear message. To change the model, edit `.env` and start the tutor again.
+
+The file `.env.example` shows the format. Copy it to `.env` and fill in the values. Do not commit the `.env` file. A value in `.env` replaces the same variable from the shell. An empty value in `.env` does not change the shell value.
+
+### Model client
+
+The tutor code calls one small interface, not a provider SDK. At start, the tutor makes the client for the provider in `.env`.
+
+```ts
+// One book section that the model can use and cite.
+interface Source { id: string; title: string; text: string }
+
+// One reference in a lesson: the source and the exact quote from it.
+// The text marks the reference with its number, for example "[2]".
+interface Reference { number: number; sourceId: string; quote: string }
+
+// An image for the model, for example a code image of a book.
+interface ImageInput { mediaType: "image/png" | "image/jpeg" | "image/gif" | "image/webp"; data: Uint8Array }
+
+interface LlmClient {
+  // Return JSON that matches the schema.
+  // The images come before the prompt.
+  object<T>(req: {
+    system: string; sources?: Source[]; images?: ImageInput[]; prompt: string; schema: z.ZodType<T>;
+  }): Promise<T>;
+
+  // Return free text, with references to the sources.
+  text(req: {
+    system: string; sources: Source[]; messages: Message[];
+  }): Promise<{ text: string; references: Reference[] }>;
+}
+```
+
+Two classes implement the interface:
+
+- `AnthropicClient` for Anthropic.
+- `OpenAiClient` for OpenAI, OpenRouter, and Google.
+
+The two classes do the same work in different ways:
+
+- JSON output: each client sends the zod schema as a JSON schema. If a model does not accept a JSON schema, the client asks for JSON in the prompt. The client checks each result with zod. If the check fails, the client tries one more time.
+- References: `AnthropicClient` uses the citations of the Anthropic API. `OpenAiClient` tells the model to cite with markers, for example `[S3: "exact quote"]`. Each client returns the same `Reference` list.
+- Prompt cache: each client puts the sources at the start of the prompt, in the same order for each call. `AnthropicClient` adds a cache marker after the sources. OpenAI caches long prompt prefixes without a marker.
+- Reasoning level: `OpenAiClient` sends `reasoning_effort` to OpenAI. OpenRouter uses a different format, so the client sends `reasoning: { effort }` to OpenRouter. The Gemini API accepts `none` (only for 2.5 models), `minimal`, `low`, `medium`, and `high`, so the client sends `high` for `xhigh` and `max`.
+- Empty answers: some reasoning models on OpenRouter sometimes return an empty answer with a normal finish. The text is then only in the reasoning field. After an empty answer, `OpenAiClient` asks one more time. After a second empty answer, it shows an error with the finish reason, the token counts, and the provider. The tutor never saves an empty lesson or an empty chat answer.
+- Images: `AnthropicClient` sends each image as a base64 image block. `OpenAiClient` sends each image as a data URL. OpenRouter and the Gemini API accept the same format.
+- Log: each client writes one line for each model call, with the time and the result. The server and `npm run llm:check` print the lines. The tests print nothing.
+
+For each provider, the tutor checks that each quote is in the text of its source. If a quote is not in the source, the tutor removes the reference. If a lesson has no valid reference, the tutor shows a warning on the lesson.
+
+For some Claude models (Claude Fable 5.1, Claude Opus 5.5, Claude Opus 5, and Claude Sonnet 5.5), `AnthropicClient` turns on the server-side fallback. If the model refuses a request, the API runs the request again on a different Claude model.
+
+To check the model in `.env`, run `npm run llm:check`. The command sends one JSON request, one text request with references, and one request with an image. If the model does not accept images, the command says so. The other parts of the tutor work without images.
+
+### Cost
+
+These numbers are rough estimates for one large model (Claude Opus 5.5) from the list prices. Other models have other prices. Measure the real cost in the first week.
+
+- Ingest of one book of 300 pages, with the review stage: about $2 to $5, one time.
+- One concept loop, with the lesson, the questions, the test, and the grades: about $0.10 to $0.40.
+- A subject with 100 concepts in the study queue: about $10 to $40.
+
+## Where it runs
+
+Until phase 4, the tutor runs on the laptop of the user. Start it with `npm start`, then open `http://localhost:3000` in a browser. The laptop needs no Docker.
+
+In phase 4, the user can also run the tutor on a home server, a rented server, or a platform. See "Self-hosted release (phase 4)".
+
+A Telegram client on the phone is an option for later. It needs a server, as in phase 4.
+
+## Repository layout
+
+```
+data/                 (not in git)
+  tutor.db            SQLite database
+  subjects/<subject>/
+    concept-map.md    the concept map of the subject, for people to read
+    books/<book>/
+      <book file>     a copy of the EPUB or PDF file
+      sections/       section text in Markdown
+      work/           cached results of the extract and review stages, and the image texts
+      parse-report.json
+      ingest-report.json
+      ingest-report.preview.json
+      concept-map.preview.md
+  web/                EPUB files of online books and videos, from fetch
+    transcripts/      one transcript for each video, the cache of the video model
+  bin/                yt-dlp, which the tutor downloads by itself
+src/
+  server/             HTTP API
+  app/                React app
+  ingest/core/        blocks, sections, Markdown, checklist (all formats)
+  ingest/epub/        EPUB reader
+  ingest/pdf/         tagged PDF reader
+  ingest/web/         online books: table of contents, download, EPUB writer
+  ingest/video/       YouTube videos: yt-dlp, the video model, the transcript checks
+  ingest/             concept extraction, merge
+  tutor/              select, diagnose, queue, teach, test, board
+  grader/             scores for short and apply answers
+  llm/                model client for each provider, and prompts
+  db/                 SQLite schema and queries
+.env                  the provider, the model, and the API keys (not in git)
+.env.example          the format of .env
+Dockerfile            the container image (phase 4)
+compose.yaml          the tutor and Caddy, for a rented server (phase 4)
+Caddyfile             the HTTPS setup for Caddy (phase 4)
+docs/deploy/          one guide for each platform (phase 4)
+.github/workflows/    the build of the image for each release (phase 4)
+```
+
+Do not commit `data/`. It contains the text of books that the user bought, and the progress of the user.
+
+## Phases
+
+Each phase ends with a tool that the user can learn with.
+
+1. Phase 1: the app, with subjects and one book for each subject. Add EPUB ingest with the parse checks, the review stage, and the ingest report. Add the concept map, select and diagnose, the study queue, lessons with references, and tests with multiple-choice and short answers. Add the model client and the `.env` file.
+2. Phase 2: the review board and the stars. The user sees what they learned, tests a concept again, and keeps a list of the key concepts.
+3. Phase 3: ingest in the app. The user creates a subject and adds a book from a file, from the web, or from a YouTube video or playlist. The user follows the progress of the run and reads the ingest report in the app. See "Ingest in the app (phase 3)".
+4. Phase 4: the self-hosted release. Each user runs their own copy on a laptop, a home server, a rented server, or a platform, with a password and HTTPS. See "Self-hosted release (phase 4)".
+5. Phase 5: more books for each subject. Test the merge step on real books and make it better.
+6. Later: the actions of the ingest report, the ingest test, a Telegram client, and untagged PDF files.
+
+## Risks
+
+1. The merge step can join two different ideas, or keep two copies of one idea. Test the merge on two books of one subject early in phase 5. The map screen shows the sources of each concept, so bad merges are easy to see.
+2. A guess can pass a multiple-choice question. Thus, each diagnosis and each test includes a short answer or an apply question.
+3. The model can teach content that is not in the books. The checked references and the "not from the books" mark make this content visible.
+4. Two books can split one idea into concepts of different sizes. The size rule in "Concept map" tells the model the correct size.
+5. The user can skip a prerequisite or put it late in the queue. Then the concepts that need it are harder to learn. The prerequisite warnings in the queue show this risk, but the user still decides.
+6. Models differ in quality and in support for JSON schemas. A weak model can write bad questions or wrong grades. The zod check, the retry, and the reference check find bad output.
+7. With OpenRouter, the prompts and the book text go to the vendor of the selected model. Read the data policy of each vendor before you use it.
+8. EPUB files differ in structure. Some have a poor table of contents or few headings, and then the split into sections is bad. The parse checks and the ingest report show these problems.
+9. No method finds all concepts. The review stage and the ingest report make a missed concept visible, and the user can add it.
+10. The server parses a book in its own process. During the parse of a large PDF file, the other requests of the app wait. The tutor is for one user, so this wait is acceptable.
+11. YouTube can block yt-dlp. Google can also change or stop the YouTube function of Gemini, which is a preview now. Then videos do not work until a yt-dlp update or a change of design. Books and online books do not depend on them.
+12. The video model can write wrong code from the screen, or invent text. The transcript checks and the note before the code make this risk smaller, but they do not remove it.
+
+## Open questions
+
+- Phase 4: the license of the repository.
+- Videos: do the clip offsets of the Gemini API work with YouTube addresses? If they do, the provider `google` can make one request for each YouTube chapter. Then the user can select the chapters of one video, and the limit of 90 minutes does not apply. A test with a Gemini key on one chapter of a short video answers the question.

@@ -1,0 +1,2543 @@
+/* The tutor is a study notebook: ink on paper, a red margin line with the status marks
+   of the concepts, and a highlighter for the quotes from the books. */
+
+:root {
+  --paper: #fcfcfa;
+  --ink: #1d2c4d;
+  --graphite: #5b6472;
+  --rule: #d3deee;
+  --margin-red: #d9534f;
+  --highlight: #ffe55c;
+  --highlight-soft: #fff3b0;
+  --panel: #ffffff;
+  --focus: #2f6fdb;
+  /* Green is for the concepts that the learner knows. */
+  --green: #2e8b57;
+  --green-soft: #e4f3e9;
+  /* Amber is for the stars of the important concepts. */
+  --star: #b7791f;
+
+  --ui: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --reading: "Literata", Georgia, "Times New Roman", serif;
+  --code: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* A type scale with the ratio 1.2. */
+  --step--1: 0.833rem;
+  --step-0: 1rem;
+  --step-1: 1.2rem;
+  --step-2: 1.44rem;
+  --step-3: 2.074rem;
+
+  --margin-width: 4.5rem;
+  /* The space between the red margin line and the text. */
+  --gutter: 1.5rem;
+  --measure: 46rem;
+
+  /* The ruled lines of the paper. The value is in pixels, so that each line is sharp. */
+  --line-gap: 28px;
+  --line: color-mix(in srgb, var(--rule) 60%, var(--paper));
+  --margin-line: color-mix(in srgb, var(--margin-red) 80%, var(--paper));
+
+  /* The spiral binding: one ring for each ruled line. */
+  --binding-width: 20px;
+  --binding: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='28'%3E%3Cpath d='M15 16C10 21.5 3 21.5 -1 18.5' fill='none' stroke='%23a7aeba' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='13' y='9' width='6' height='9' rx='1.5' fill='%233a4150'/%3E%3Cpath d='M-1 5.5C4 3 12 4 15.5 11' fill='none' stroke='%235f6878' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M-1 5.5C4 3 12 4 15.5 11' fill='none' stroke='%23eceff3' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #16213a;
+    --ink: #e6ebf4;
+    --graphite: #a3adbd;
+    --rule: #2c3a58;
+    --margin-red: #e0736f;
+    --highlight: #b89a16;
+    --highlight-soft: #4d4516;
+    --panel: #1c2944;
+    --focus: #8ab4ff;
+    --green: #5cc58a;
+    --green-soft: #1d3b36;
+    --star: #f2c94c;
+    --line: color-mix(in srgb, var(--rule) 80%, var(--paper));
+    --binding: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='28'%3E%3Cpath d='M15 16C10 21.5 3 21.5 -1 18.5' fill='none' stroke='%233d4a66' stroke-width='2.4' stroke-linecap='round'/%3E%3Crect x='13' y='9' width='6' height='9' rx='1.5' fill='%230a1020'/%3E%3Cpath d='M-1 5.5C4 3 12 4 15.5 11' fill='none' stroke='%230a1020' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M-1 5.5C4 3 12 4 15.5 11' fill='none' stroke='%238793a8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    color-scheme: dark;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 106.25%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration-color: var(--margin-red);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+h1,
+h2 {
+  font-family: var(--ui);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+h1 {
+  font-size: var(--step-3);
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: var(--step-1);
+  margin: 2.5rem 0 1rem;
+}
+
+p {
+  margin: 0 0 1rem;
+}
+
+.quiet {
+  color: var(--graphite);
+}
+
+.lead {
+  max-width: var(--measure);
+  color: var(--graphite);
+  font-size: var(--step-1);
+  line-height: 1.45;
+  margin-bottom: 2rem;
+}
+
+/* The page: a sheet of ruled notebook paper with a spiral binding and a red margin line on the left. */
+
+.shell {
+  position: relative;
+  min-height: 100vh;
+  background-color: var(--paper);
+  background-image: linear-gradient(transparent calc(var(--line-gap) - 1px), var(--line) calc(var(--line-gap) - 1px));
+  background-size: 100% var(--line-gap);
+}
+
+/* The red margin line runs down the full page, also through the top bar and the action bar. */
+.shell::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: var(--margin-width);
+  width: 2px;
+  background: var(--margin-line);
+  pointer-events: none;
+}
+
+.shell::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--binding-width);
+  background: var(--binding) repeat-y;
+  background-size: var(--binding-width) var(--line-gap);
+  pointer-events: none;
+}
+
+/* The top bar is the blank band at the top of the sheet. Its height is three ruled lines,
+   so that its bottom border is on a ruled line. */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  align-content: center;
+  gap: 0.25rem 1.5rem;
+  min-height: calc(3 * var(--line-gap));
+  padding: 0.75rem 1.5rem 0.75rem calc(var(--margin-width) + var(--gutter));
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+
+.wordmark {
+  font-family: var(--reading);
+  font-size: var(--step-1);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The logo is a mask, so that it has the color of the text. */
+.wordmark::before {
+  content: "";
+  display: inline-block;
+  width: 1.33em;
+  height: 1em;
+  margin-right: 0.4em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  mask: url("/logo.svg") center / contain no-repeat;
+}
+
+/* The tabs of a subject. Each tab has a large area to click. */
+.subject-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+}
+
+/* The name of the subject is a button. It opens the menu of all subjects. */
+.subject-switch {
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--rule);
+}
+
+.subject-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  anchor-name: --subject-switch;
+}
+
+.subject-switch button:hover,
+.subject-switch:has(:popover-open) button {
+  border-color: var(--graphite);
+}
+
+.subject-switch .chevron {
+  color: var(--graphite);
+  transition: transform 120ms ease-out;
+}
+
+.subject-switch:has(:popover-open) .chevron {
+  transform: rotate(180deg);
+}
+
+/* A browser without anchor positioning shows the menu in the center of the window. */
+.subject-menu {
+  min-width: 16rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.4rem 0;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 0.4rem 1.2rem color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+@supports (anchor-name: --subject-switch) {
+  .subject-menu {
+    position-anchor: --subject-switch;
+    position-area: bottom span-right;
+    position-try-fallbacks: flip-inline;
+    inset: auto;
+    margin: 0.35rem 0 0;
+  }
+}
+
+.subject-menu ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subject-menu a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+}
+
+.subject-menu a:hover {
+  background: color-mix(in srgb, var(--rule) 40%, var(--panel));
+}
+
+/* The focus ring stays inside the menu, because the menu cuts off the content outside its border. */
+.subject-menu a:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The current subject has the red mark of the active tab. */
+.subject-menu a[aria-current] {
+  box-shadow: inset 3px 0 0 var(--margin-red);
+  font-weight: 600;
+}
+
+.subject-menu-figure {
+  color: var(--graphite);
+  font-size: var(--step--1);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.subject-menu .subject-menu-all {
+  margin-top: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+  color: var(--graphite);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.subject-menu-note {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  color: var(--graphite);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tabs a {
+  display: block;
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.3rem;
+  color: var(--graphite);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.tabs a:hover {
+  background: color-mix(in srgb, var(--rule) 40%, var(--paper));
+  color: var(--ink);
+}
+
+.tabs a.active {
+  border-radius: 0.3rem 0.3rem 0 0;
+  box-shadow: inset 0 -3px 0 var(--margin-red);
+  color: var(--ink);
+}
+
+/* A link back to the page before, above the title. */
+.back-link {
+  margin: 0 0 0.5rem;
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.page {
+  position: relative;
+  max-width: calc(var(--measure) + var(--margin-width) + 6rem);
+  padding: 2.5rem 1.5rem 6rem calc(var(--margin-width) + var(--gutter));
+}
+
+.notice {
+  max-width: var(--measure);
+}
+
+.command,
+.reading pre {
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--rule) 25%, var(--paper));
+  font-family: var(--code);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* Lists of subjects and books read as the contents page of a book, with dotted leaders. */
+
+.contents {
+  max-width: var(--measure);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contents li {
+  padding: 0.6rem 0;
+}
+
+.contents-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+
+.contents-title {
+  font-family: var(--reading);
+  font-size: var(--step-1);
+  font-weight: 500;
+}
+
+a.contents-entry:hover .contents-title {
+  text-decoration: underline;
+  text-decoration-color: var(--margin-red);
+  text-underline-offset: 0.2em;
+}
+
+.leader {
+  flex: 1;
+  min-width: 2rem;
+  border-bottom: 2px dotted var(--rule);
+  transform: translateY(-0.3em);
+}
+
+.contents-figure {
+  color: var(--graphite);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.contents-note {
+  margin: 0.15rem 0 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+/* The delete action stays quiet next to the note. The confirmation is a panel with a red edge. */
+.contents-note .contents-action {
+  margin-left: 1rem;
+  color: var(--graphite);
+}
+
+.confirm-delete {
+  max-width: var(--measure);
+  margin: 0.75rem 0 0;
+  padding: 0.9rem 1.25rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+.confirm-delete p {
+  margin: 0;
+}
+
+.confirm-delete p + p {
+  margin-top: 0.75rem;
+}
+
+/* Progress */
+
+.progress-bar {
+  display: flex;
+  height: 0.6rem;
+  max-width: var(--measure);
+  overflow: hidden;
+  border-radius: 0.3rem;
+  background: var(--rule);
+}
+
+.segment-new {
+  background: var(--rule);
+}
+.segment-to_test {
+  background: color-mix(in srgb, var(--graphite) 45%, var(--rule));
+}
+.segment-failed {
+  background: var(--margin-red);
+}
+.segment-queued {
+  background: var(--highlight-soft);
+}
+.segment-learning {
+  background: var(--highlight);
+}
+.segment-known {
+  background: color-mix(in srgb, var(--green) 55%, var(--paper));
+}
+.segment-mastered {
+  background: var(--green);
+}
+.segment-skipped {
+  background: repeating-linear-gradient(135deg, var(--rule) 0 4px, transparent 4px 8px);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0.9rem 0 1.5rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--step--1);
+}
+
+.legend li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.legend .count {
+  color: var(--graphite);
+  font-variant-numeric: tabular-nums;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border-radius: 0.3rem;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.button:hover {
+  background: color-mix(in srgb, var(--ink) 85%, var(--margin-red));
+}
+
+.text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.text-button:hover {
+  text-decoration-color: var(--margin-red);
+}
+
+/* The status marks sit in the margin, as a reader marks a book. */
+
+.mark {
+  display: inline-block;
+  min-width: 1.3em;
+  font-family: var(--reading);
+  font-size: 1.3em;
+  line-height: 1;
+  text-align: center;
+}
+
+.mark-new,
+.mark-skipped {
+  color: var(--graphite);
+}
+.mark-to_test {
+  color: var(--ink);
+}
+.mark-known {
+  color: var(--green);
+  font-weight: 700;
+}
+.mark-mastered {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15em;
+  min-width: 0;
+  height: 1.15em;
+  border-radius: 50%;
+  background: var(--green);
+  color: var(--paper);
+  font-size: 1.1em;
+  font-weight: 700;
+}
+.mark-failed {
+  color: var(--margin-red);
+}
+.mark-queued,
+.mark-learning {
+  color: var(--ink);
+  background: linear-gradient(transparent 20%, var(--highlight) 20%, var(--highlight) 85%, transparent 85%);
+}
+
+/* Concept map */
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  max-width: var(--measure);
+  margin-bottom: 1rem;
+}
+
+.search label {
+  font-weight: 500;
+}
+
+.search .check {
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.search input[type="search"] {
+  flex: 1;
+  min-width: 14rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.module h2 {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.module-number {
+  color: var(--margin-red);
+  font-variant-numeric: tabular-nums;
+}
+
+.concepts {
+  max-width: var(--measure);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.concept {
+  position: relative;
+  padding: 0.75rem 0 0.6rem;
+}
+
+/* The margin column is to the left of the red line. */
+/* The marks are in the middle of the space between the spiral binding and the red line. */
+.margin {
+  position: absolute;
+  top: 0.45rem;
+  left: calc(-1 * var(--margin-width) - var(--gutter) + var(--binding-width));
+  width: calc(var(--margin-width) - var(--binding-width));
+  text-align: center;
+}
+
+.margin .mark {
+  font-size: 1.75rem;
+}
+
+/* In a list of concepts with status rows, the background of a row shows its status: yellow to learn, green known, gray skipped. */
+.status-rows > .concept {
+  padding: 0.2rem 0;
+}
+
+.status-rows > .concept > .concept-body {
+  margin: 0 -0.75rem;
+  padding: 0.55rem 0.75rem 0.6rem;
+  border-radius: 0.35rem;
+}
+
+.status-rows > .concept > .margin {
+  top: 0.55rem;
+}
+
+.status-rows > .status-queued > .concept-body,
+.status-rows > .status-learning > .concept-body {
+  background: color-mix(in srgb, var(--highlight-soft) 30%, var(--paper));
+}
+
+.status-rows > .status-known > .concept-body,
+.status-rows > .status-mastered > .concept-body {
+  background: color-mix(in srgb, var(--green-soft) 50%, var(--paper));
+}
+
+.status-rows > .status-skipped > .concept-body {
+  background: color-mix(in srgb, var(--rule) 22%, var(--paper));
+}
+
+.concept-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step-0);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.concept-name:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--margin-red);
+  text-underline-offset: 0.2em;
+}
+
+/* The star button of a concept. The target is larger than the glyph, so that it is easy to click. */
+.star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--graphite);
+  font-family: var(--ui);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.star:hover {
+  background: color-mix(in srgb, var(--rule) 40%, transparent);
+  color: var(--star);
+}
+
+.star.starred {
+  color: var(--star);
+}
+
+.star:disabled {
+  cursor: progress;
+}
+
+/* The title of a page with a star button next to it. */
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.title-row h1 {
+  margin: 0;
+}
+
+.title-row .star {
+  font-size: 1.6rem;
+}
+
+/* In a concept row, the star does not make the row higher. */
+.concept-head .star {
+  margin: -0.4rem 0;
+}
+
+.concept-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.6rem;
+}
+
+.concept-meta {
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.objective {
+  margin: 0.2rem 0 0;
+  font-family: var(--reading);
+  font-size: 0.97rem;
+  line-height: 1.6;
+}
+
+/* In a list of concepts, the goal is smaller and lighter than the name, so that the names lead the eye. */
+.concept .objective {
+  margin-top: 0.15rem;
+  color: var(--graphite);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* A skipped concept is gray, so that the other concepts stand out. */
+.concept.status-skipped .concept-name,
+.concept.status-skipped .concept-title {
+  color: var(--graphite);
+  font-weight: 500;
+}
+
+.concept.status-skipped .objective {
+  color: color-mix(in srgb, var(--graphite) 70%, var(--paper));
+}
+
+.concept-details {
+  margin-top: 0.75rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--rule);
+}
+
+/* The name and the status of a concept are on the left, its actions are on the right. */
+.concept-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+}
+
+.concept-top .concept-head {
+  flex: 1 1 18rem;
+}
+
+/* The checkbox of a concept. A row without a checkbox keeps the same space, so that the names stay in one column. */
+.select-box {
+  display: inline-flex;
+  align-self: center;
+  flex: none;
+  width: 1rem;
+  cursor: pointer;
+}
+
+.select-box input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.status-rows > .concept.selected > .concept-body {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+/* The bar for the selected concepts: the count on the left, the actions on the right. */
+.selection-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.selection-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.concept-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.concept-actions .error {
+  margin: 0;
+  max-width: 20rem;
+  text-align: right;
+}
+
+/* A group of small buttons, in the same place on each row. */
+.chips {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  font-size: var(--step--1);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.chip + .chip {
+  border-left: 1px solid var(--rule);
+}
+
+.chip:hover {
+  background: color-mix(in srgb, var(--rule) 45%, var(--panel));
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chip-icon {
+  color: var(--margin-red);
+  font-weight: 700;
+}
+
+/* The status of a concept as a colored tag. The colors follow the marks in the margin. */
+.tag.tag-learning {
+  background: var(--highlight);
+}
+
+.tag.tag-known,
+.tag.tag-mastered {
+  background: var(--green);
+  color: var(--paper);
+}
+
+.tag.tag-skipped {
+  background: color-mix(in srgb, var(--rule) 70%, var(--paper));
+  color: var(--graphite);
+}
+
+.tag.tag-failed {
+  background: color-mix(in srgb, var(--margin-red) 15%, var(--paper));
+  color: var(--margin-red);
+}
+
+.tag.tag-to_test {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--graphite);
+  color: var(--graphite);
+}
+
+.needs {
+  font-size: var(--step--1);
+}
+
+.sources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sources li + li {
+  margin-top: 1rem;
+}
+
+.source-ref {
+  margin: 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+/* "Read the section" and "Watch from 4:05" on one line. The player of a reference opens below them. */
+.reference-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1.25rem;
+}
+
+.reference-actions .video-player {
+  flex-basis: 100%;
+}
+
+/* The YouTube player of a section from a video. */
+.video-player {
+  max-width: 40rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.video-player iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 0.4rem;
+  background: var(--ink);
+}
+
+.video-player p {
+  margin: 0.4rem 0 0;
+}
+
+.quote {
+  margin: 0.35rem 0 0.4rem;
+  font-family: var(--reading);
+  font-style: italic;
+  line-height: 1.7;
+}
+
+.quote span {
+  background: linear-gradient(transparent 55%, var(--highlight-soft) 55%);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* The diagnosis: marks, questions, feedback, and results. */
+
+.module-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 1rem;
+  max-width: var(--measure);
+  border-bottom: 2px solid var(--ink);
+  margin: 2.5rem 0 0;
+}
+
+.module-head h2 {
+  border-bottom: 0;
+  margin: 0;
+  padding-bottom: 0.4rem;
+  /* A link to a module scrolls to it. The space keeps the heading away from the top of the window. */
+  scroll-margin-top: 1rem;
+}
+
+.module-action,
+.text-link {
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+/* A result row of a diagnosis: the concept on the left, the choice on the right. */
+.concept-select {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem 1.5rem;
+  align-items: start;
+}
+
+.concept-title {
+  font-weight: 600;
+}
+
+.segmented {
+  display: inline-flex;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  overflow: hidden;
+  font-size: var(--step--1);
+}
+
+.segmented label {
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.segmented label + label {
+  border-left: 1px solid var(--rule);
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented label.selected {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.check {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: var(--step--1);
+}
+
+.action-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  max-width: var(--measure);
+  margin-top: 1.5rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  /* The paper of the bar goes across the full width of the page, so that no row or mark behind it shows. */
+  box-shadow: 0 0 0 100vmax var(--paper);
+  clip-path: inset(0 -100vmax);
+}
+
+.action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A button with a spinner is busy, not unavailable. It stays easy to see. */
+.button:disabled:has(.spinner) {
+  opacity: 0.8;
+  cursor: progress;
+}
+
+/* The spinner: an arc that turns, in the color of the text. */
+.spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.5em;
+  border: 0.14em solid color-mix(in srgb, currentColor 18%, transparent);
+  border-top-color: currentColor;
+  border-right-color: currentColor;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* With reduced motion, the spinner turns slowly. A spinner that does not turn looks like a frozen page. */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+button.button {
+  border: 0;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.error {
+  color: var(--margin-red);
+  font-weight: 500;
+}
+
+.plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plain-list li {
+  padding: 0.25rem 0;
+}
+
+.question {
+  position: relative;
+  max-width: var(--measure);
+}
+
+.question .margin {
+  top: 0.1rem;
+}
+
+.question-about {
+  margin: 0 0 0.25rem;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.question-text {
+  font-family: var(--reading);
+  font-size: var(--step-1);
+  line-height: 1.55;
+}
+
+.options {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+
+.option {
+  display: flex;
+  gap: 0.65rem;
+  align-items: baseline;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  cursor: pointer;
+  font-family: var(--reading);
+}
+
+.options:disabled .option {
+  cursor: default;
+}
+
+.option.picked {
+  border-color: var(--ink);
+}
+
+.option.right {
+  border-color: var(--ink);
+  background: linear-gradient(transparent 0, var(--highlight-soft) 0);
+}
+
+.option.wrong {
+  border-color: var(--margin-red);
+  text-decoration: line-through;
+  text-decoration-color: var(--margin-red);
+}
+
+.open-answer {
+  margin-bottom: 1.25rem;
+}
+
+.open-answer label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+.open-answer textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--reading);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.feedback {
+  margin-top: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+.verdict {
+  font-weight: 600;
+}
+
+.feedback-label {
+  font-weight: 500;
+}
+
+.feedback ul {
+  margin-top: 0;
+  font-family: var(--reading);
+}
+
+.wrong {
+  margin-top: 0.5rem;
+}
+
+.wrong-question {
+  margin: 0;
+  font-family: var(--reading);
+  font-style: italic;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 40rem) {
+  .concept-select {
+    grid-template-columns: 1fr;
+  }
+  .concept-select .segmented {
+    justify-self: start;
+  }
+}
+
+/* Overview of a subject */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem 1.5rem;
+  max-width: var(--measure);
+  margin: 0 0 2rem;
+  padding: 0;
+  list-style: none;
+  color: var(--graphite);
+  font-size: var(--step--1);
+  line-height: 1.45;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.6rem;
+}
+
+.steps strong {
+  color: var(--ink);
+}
+
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* The card of the next concept to learn is the main action of the overview. */
+.next-card {
+  max-width: var(--measure);
+  margin: 0 0 1rem;
+  padding: 1.1rem 1.5rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.next-card .button-row {
+  margin: 1rem 0 0;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--graphite);
+  font-size: var(--step--1);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.next-name {
+  margin: 0;
+  font-family: var(--reading);
+  font-size: var(--step-2);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.next-meta {
+  margin: 0.2rem 0 0.4rem;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.section-intro {
+  max-width: var(--measure);
+  color: var(--graphite);
+}
+
+.module-list {
+  max-width: var(--measure);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.module-row {
+  display: grid;
+  grid-template-columns: 1.75rem 1fr;
+  gap: 0 0.5rem;
+  padding: 0.75rem 0;
+}
+
+.module-row .module-number {
+  font-family: var(--reading);
+  font-size: var(--step-1);
+}
+
+.module-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.module-name {
+  font-family: var(--reading);
+  font-size: var(--step-1);
+  font-weight: 500;
+}
+
+.module-status {
+  margin: 0.4rem 0 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.button.small {
+  padding: 0.3rem 0.8rem;
+  font-size: var(--step--1);
+}
+
+/* A second button next to the main action has only an outline. */
+.button.secondary {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink);
+  color: var(--ink);
+}
+
+.button.secondary:hover {
+  background: color-mix(in srgb, var(--rule) 40%, var(--paper));
+}
+
+/* A button that deletes data is red. The mix with the ink keeps the text easy to read in the two color schemes. */
+.button.danger {
+  background: color-mix(in srgb, var(--margin-red) 80%, var(--ink));
+}
+
+.button.danger:hover {
+  background: color-mix(in srgb, var(--margin-red) 65%, var(--ink));
+}
+
+/* Study queue */
+
+.suggestion {
+  max-width: var(--measure);
+  margin-bottom: 1.5rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+/* The two orders for the whole queue: two cards of the same size, side by side on a wide screen. */
+.order-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+  max-width: var(--measure);
+  margin-bottom: 1.25rem;
+}
+
+.order-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+.order-option p {
+  margin: 0;
+}
+
+.order-option .button,
+.order-current {
+  width: 100%;
+  text-align: center;
+}
+
+.order-check {
+  margin-right: 0.4rem;
+}
+
+.order-current {
+  padding: 0.55rem 1.1rem;
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--green-soft) 70%, var(--panel));
+  color: var(--green);
+  font-weight: 500;
+}
+
+.queue-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0;
+  max-width: var(--measure);
+  margin: -1rem 0 1.5rem;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.queue-facts span + span::before {
+  content: "·";
+  margin: 0 0.6rem;
+}
+
+.queue-facts strong {
+  color: var(--ink);
+}
+
+.queue-help {
+  max-width: var(--measure);
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.tag {
+  padding: 0.05rem 0.45rem;
+  border-radius: 0.25rem;
+  background: var(--highlight-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.queue-item p.concept-meta {
+  margin: 0.1rem 0 0;
+}
+
+.queue-source {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.4rem;
+  align-items: start;
+  margin: 0.3rem 0 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.queue-source .text-button {
+  color: var(--graphite);
+  font-weight: 400;
+  line-height: inherit;
+  text-align: left;
+}
+
+/* The actions of a row are in groups: start, move, and take out. */
+.action-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.75rem;
+  padding-left: 1rem;
+  border-left: 1px solid var(--rule);
+}
+
+.action-label {
+  color: var(--graphite);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.add-concepts {
+  max-width: var(--measure);
+  margin-top: 1.5rem;
+  padding: 0 1.25rem 0.25rem;
+  border: 2px dashed var(--rule);
+  border-radius: 0.4rem;
+}
+
+.add-concepts h2 {
+  margin: 0.9rem 0 0.4rem;
+}
+
+/* Only the row that moves has paper, so that it covers the rows below it. */
+.queue-item.dragging {
+  z-index: 2;
+  background: var(--paper);
+  box-shadow: 0 0.4rem 1.2rem color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.queue-number {
+  color: var(--margin-red);
+  font-family: var(--reading);
+  font-size: var(--step-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-item.next .queue-number {
+  color: var(--ink);
+  background: linear-gradient(transparent 20%, var(--highlight) 20%, var(--highlight) 85%, transparent 85%);
+  padding: 0 0.2em;
+}
+
+.queue-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.75rem;
+}
+
+.drag-handle {
+  align-self: start;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 0.2rem;
+  background: none;
+  color: var(--graphite);
+  font-size: 1.1rem;
+  line-height: 1.2;
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.queue-item a.concept-title {
+  text-decoration: none;
+}
+
+.queue-item a.concept-title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--margin-red);
+}
+
+.warning {
+  margin: 0.35rem 0 0;
+  color: var(--margin-red);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+
+.warning p {
+  margin: 0;
+}
+
+.warning a {
+  color: inherit;
+  text-decoration-color: currentColor;
+}
+
+.warning-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 1rem;
+  margin-top: 0.2rem;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0.45rem 0 0;
+}
+
+.row-actions .text-button:disabled {
+  color: var(--graphite);
+  opacity: 0.45;
+  text-decoration: none;
+  cursor: default;
+}
+
+/* Review board: one short line for each concept, in two columns on a wide screen. */
+
+.board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  max-width: var(--measure);
+  margin-bottom: 1rem;
+}
+
+/* On a narrow screen, the status filters wrap as separate buttons. */
+@media (max-width: 48rem) {
+  .board-filters .segmented {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    border: 0;
+    background: none;
+    overflow: visible;
+  }
+
+  .board-filters .segmented label,
+  .board-filters .segmented label + label {
+    border: 1px solid var(--rule);
+    border-radius: 0.3rem;
+    background: var(--panel);
+  }
+
+  .board-filters .segmented label.selected {
+    border-color: var(--ink);
+    background: var(--ink);
+  }
+}
+
+.board-filters .count {
+  margin-left: 0.2rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A button that stays pressed, for example the "Starred" filter. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+
+.toggle[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.toggle-star {
+  color: var(--star);
+}
+
+.board-module .module-head {
+  margin-top: 1.75rem;
+}
+
+.board-count {
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.board-lines {
+  max-width: var(--measure);
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  columns: 2 17rem;
+  column-gap: 2.5rem;
+}
+
+.board-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  break-inside: avoid;
+}
+
+.board-line .mark {
+  flex-shrink: 0;
+  font-size: 1.05rem;
+}
+
+.board-line a {
+  flex: 1;
+  color: var(--ink);
+  line-height: 1.3;
+  text-decoration: none;
+}
+
+.board-line a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--margin-red);
+}
+
+.board-line.status-skipped a {
+  color: var(--graphite);
+}
+
+.board-line .star {
+  flex-shrink: 0;
+  min-height: 1.75rem;
+}
+
+/* Lessons */
+
+.small {
+  font-size: var(--step--1);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1.25rem;
+}
+
+.text-button.strong {
+  font-weight: 600;
+}
+
+.prerequisite-name {
+  font-weight: 500;
+}
+
+.sources-list {
+  max-width: var(--measure);
+  margin-bottom: 1.5rem;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.sources-list .text-button {
+  color: var(--graphite);
+  font-weight: 400;
+  line-height: inherit;
+  text-align: left;
+}
+
+.lesson {
+  max-width: var(--measure);
+  margin-top: 1.5rem;
+}
+
+.lesson h2 {
+  margin-top: 2rem;
+}
+
+.lesson pre,
+.chat-answer pre {
+  overflow-x: auto;
+  padding: 0.75rem 1rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--rule) 25%, var(--paper));
+  font-family: var(--code);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ref {
+  margin: 0 0.1em;
+  padding: 0 0.3em;
+  border: 0;
+  border-radius: 0.2rem;
+  background: var(--highlight-soft);
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1.4;
+  vertical-align: super;
+  cursor: pointer;
+}
+
+.ref:hover {
+  background: var(--highlight);
+}
+
+.references {
+  max-width: var(--measure);
+  padding-left: 1.5rem;
+}
+
+.references li {
+  margin-bottom: 1rem;
+  padding-left: 0.25rem;
+}
+
+.references li::marker {
+  color: var(--margin-red);
+  font-family: var(--reading);
+}
+
+.references-link {
+  margin-top: 1.5rem;
+}
+
+.chat {
+  max-width: var(--measure);
+}
+
+/* The question of the learner is a tinted box, so that it is different from the answer. */
+.chat-question {
+  margin: 1.5rem 0 0.5rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--rule) 35%, var(--paper));
+  font-weight: 500;
+}
+
+.chat-answer {
+  margin-bottom: 1rem;
+}
+
+.chat-answer .references {
+  font-size: 0.95rem;
+}
+
+.chat-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-top: 1rem;
+}
+
+.chat-input textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--reading);
+  font-size: var(--step-0);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.panel-quote {
+  margin: 0 0 1.25rem;
+}
+
+@media (max-width: 40rem) {
+  .chat-input {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The panel with the text of a book section. */
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--ink) 25%, transparent);
+}
+
+.panel {
+  width: min(44rem, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 1.25rem 2rem 4rem;
+  background: var(--panel);
+  box-shadow: -1px 0 0 var(--rule);
+  animation: panel-in 180ms ease-out;
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateX(2rem);
+    opacity: 0;
+  }
+}
+
+.panel-head {
+  position: sticky;
+  top: -1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin: -1.25rem -2rem 1rem;
+  padding: 1.25rem 2rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+.panel-source {
+  margin: 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.panel-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 1rem;
+}
+
+.reading {
+  font-family: var(--reading);
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+.reading h1,
+.reading h2,
+.reading h3,
+.reading h4 {
+  margin: 1.75rem 0 0.75rem;
+  font-family: var(--ui);
+  font-size: var(--step-1);
+  line-height: 1.25;
+}
+
+.reading h2:first-child {
+  margin-top: 0;
+  font-size: var(--step-2);
+}
+
+.reading code {
+  font-family: var(--code);
+  font-size: 0.85em;
+}
+
+.reading table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-family: var(--ui);
+  font-size: var(--step--1);
+}
+
+.reading th,
+.reading td {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--rule);
+  text-align: left;
+}
+
+/* A quote in a book is indented, as in print. */
+.reading blockquote {
+  margin: 1rem 0 1rem 1.5rem;
+  color: var(--graphite);
+}
+
+@media (max-width: 40rem) {
+  :root {
+    --margin-width: 2.5rem;
+    --gutter: 1rem;
+  }
+  /* The narrow margin has no space for the binding next to the status marks. */
+  .shell::after {
+    display: none;
+  }
+  .topbar {
+    gap: 0.25rem 1rem;
+  }
+  .subject-switch {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .margin {
+    left: calc(-1 * var(--margin-width) - var(--gutter));
+    width: var(--margin-width);
+  }
+  .margin .mark {
+    font-size: 1.35rem;
+  }
+  .steps {
+    grid-template-columns: 1fr;
+  }
+  .tabs a {
+    padding: 0.45rem 0.5rem;
+  }
+  .page {
+    padding-right: 1rem;
+  }
+  .panel {
+    padding: 1rem 1.25rem 3rem;
+  }
+  .panel-head {
+    margin: -1rem -1.25rem 1rem;
+    padding: 1rem 1.25rem 0.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
+
+/* The test after a lesson */
+
+.result-head {
+  position: relative;
+}
+
+.result-head .margin {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.next-steps li {
+  margin-bottom: 0.6rem;
+}
+
+/* Books and ingest */
+
+/* "Add chapters" is the main action of a book. "Add a book" is a text link next to its note, except in a subject with no books. */
+.book-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.75rem;
+  margin: 0.5rem 0 0;
+}
+
+.add-book-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.add-book-inline p {
+  margin: 0;
+}
+
+.add-book-inline .error {
+  flex-basis: 100%;
+}
+
+.unsaved-heading {
+  margin: 1.5rem 0 0.25rem;
+}
+
+.add-book {
+  max-width: var(--measure);
+  margin-top: 1.5rem;
+}
+
+.add-book .button {
+  margin-bottom: 0.4rem;
+}
+
+/* "Add a book" and "Add an online book" stay together on one line. */
+.add-book-buttons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1rem;
+}
+
+/* The form of an online book: the address, and the optional address of a table of contents. */
+.online-form {
+  max-width: 36rem;
+  margin-bottom: 2rem;
+}
+
+.online-form .field,
+.settings-form .field {
+  margin-bottom: 1.1rem;
+}
+
+.online-form label,
+.settings-form label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+.online-form input,
+.settings-form input,
+.settings-form select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.field-note {
+  margin: 0.3rem 0 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+/* The EPUB file of an earlier download, with the choice to use it or to download again. */
+.existing-file {
+  flex-basis: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+.existing-file p {
+  margin: 0 0 0.5rem;
+}
+
+.existing-file .button-row {
+  margin: 0;
+}
+
+.new-subject {
+  max-width: 30rem;
+}
+
+.new-subject label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+.new-subject-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.new-subject input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.new-subject .error {
+  margin-top: 0.5rem;
+}
+
+/* A note about a run: the run in progress on the subject screen, or a stopped or failed run on the book page. */
+.run-note {
+  max-width: var(--measure);
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+/* A diagnosis that did not finish: the text, and the button that opens it again. */
+.open-diagnoses {
+  max-width: var(--measure);
+  margin: 0 0 1.5rem;
+}
+
+.open-diagnosis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.run-note.error {
+  border-color: color-mix(in srgb, var(--margin-red) 45%, var(--rule));
+}
+
+.run-panel {
+  max-width: var(--measure);
+  padding: 1.1rem 1.5rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.4rem;
+  background: var(--panel);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.run-step {
+  margin: 0.25rem 0 0.75rem;
+  font-size: var(--step-1);
+}
+
+.run-panel .progress-bar {
+  margin-bottom: 0.5rem;
+}
+
+.run-panel .button-row {
+  margin: 1rem 0 0;
+}
+
+.run-summary {
+  margin: 0;
+  font-size: var(--step--1);
+}
+
+.selection-tools {
+  margin: 0 0 0.5rem;
+}
+
+.table-scroll {
+  max-width: var(--measure);
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th,
+.data-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.data-table th {
+  color: var(--graphite);
+  font-weight: 600;
+}
+
+.data-table .number {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chapter-table td:first-child {
+  width: 2rem;
+}
+
+/* The YouTube chapters of a video: the start time, then the title. */
+.time-table td:first-child {
+  width: 5rem;
+}
+
+.chapter-table input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  vertical-align: -0.2em;
+  cursor: pointer;
+}
+
+.chapter-table label {
+  cursor: pointer;
+}
+
+.chapter-table tr.selected td {
+  background: color-mix(in srgb, var(--highlight-soft) 55%, transparent);
+}
+
+.chapter-table .tag {
+  margin-left: 0.5rem;
+  white-space: nowrap;
+}
+
+.report-details {
+  max-width: var(--measure);
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 0.3rem;
+  background: var(--panel);
+}
+
+.report-details summary {
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.report-details ul {
+  margin: 0.5rem 0 0.25rem;
+  padding-left: 1.2rem;
+  font-size: var(--step--1);
+}
+
+.report-details li + li {
+  margin-top: 0.3rem;
+}
+
+/* The preview concept map. Each concept shows its level and its type as badges.
+   The level has a color from easy (green) to hard (red). The text is mixed with the ink for enough contrast. */
+.preview-module h3 {
+  margin: 1.75rem 0 0.25rem;
+  font-size: var(--step-0);
+}
+
+.preview-concepts {
+  max-width: var(--measure);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preview-concepts li {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.preview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.5rem;
+  margin: 0;
+}
+
+.preview-name {
+  font-family: var(--reading);
+  font-weight: 600;
+}
+
+.preview-facts {
+  margin: 0.3rem 0 0;
+  color: var(--graphite);
+  font-size: var(--step--1);
+}
+
+.warning-inline {
+  color: var(--margin-red);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.badge-basic {
+  background: var(--green-soft);
+  color: color-mix(in srgb, var(--green) 75%, var(--ink));
+}
+
+.badge-intermediate {
+  background: var(--highlight-soft);
+  color: color-mix(in srgb, var(--star) 70%, var(--ink));
+}
+
+.badge-advanced {
+  background: color-mix(in srgb, var(--margin-red) 15%, var(--paper));
+  color: color-mix(in srgb, var(--margin-red) 70%, var(--ink));
+}
+
+.badge-kind {
+  background: color-mix(in srgb, var(--rule) 45%, var(--paper));
+  color: var(--graphite);
+}
+
+@media (max-width: 40rem) {
+  .data-table .wide-only {
+    display: none;
+  }
+}
+
+.preview-module h3 .board-count {
+  margin-left: 0.3rem;
+  font-weight: 400;
+}
+
+/* A concept of the preview that the concept map has already. */
+.badge-on-map {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--graphite);
+  color: var(--graphite);
+}
+
+/* The titles of the chapters of a run, at the top of the report. */
+.report-chapters {
+  margin: 0.15rem 0 0.4rem;
+  padding: 0;
+  list-style: none;
+  font-family: var(--reading);
+  font-size: var(--step-2);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.report-chapters li + li {
+  margin-top: 0.2rem;
+}
+
+.report-chapters .quiet {
+  font-family: var(--ui);
+  font-size: var(--step--1);
+  font-weight: 400;
+}
+
+/* Inside a module of the concept map, a small heading starts the concepts of each chapter. */
+.chapter-heading {
+  max-width: var(--measure);
+  margin: 1.1rem 0 0.1rem;
+  color: var(--graphite);
+  font-size: var(--step--1);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.module-head + .chapter-heading {
+  margin-top: 0.75rem;
+}
+
+/* The link to the settings, at the right end of the top bar. */
+.settings-link {
+  margin-left: auto;
+  padding: 0.45rem 0.8rem;
+  border-radius: 0.3rem;
+  color: var(--graphite);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.settings-link:hover {
+  background: color-mix(in srgb, var(--rule) 40%, var(--paper));
+  color: var(--ink);
+}
+
+.settings-link[aria-current="page"] {
+  border-radius: 0.3rem 0.3rem 0 0;
+  box-shadow: inset 0 -3px 0 var(--margin-red);
+  color: var(--ink);
+}
+
+/* The settings page: the state of the models, then the form. */
+.settings-form {
+  max-width: 36rem;
+}
+
+.settings-form h2:first-child {
+  margin-top: 2rem;
+}
+
+.settings-status {
+  max-width: 36rem;
+}
+
+.settings-status p {
+  margin: 0 0 0.4rem;
+}
+
+.settings-status .button-row {
+  margin: 0.6rem 0 0.2rem;
+}
+
+.settings-label {
+  font-weight: 500;
+}
+
+.settings-stop {
+  max-width: 36rem;
+}
+
+/* The path of the .env file can be long. */
+.settings-file {
+  max-width: 36rem;
+  margin-top: 2rem;
+  overflow-wrap: anywhere;
+}
+
+/* The note on the home screen if the tutor has no model. */
+.setup-note {
+  margin-bottom: 2rem;
+}

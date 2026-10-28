@@ -1,0 +1,264 @@
+// Each migration changes the schema from one version to the next. Add a new migration
+// for each change, and do not change the old migrations: databases of users have them already.
+
+const V1 = `
+CREATE TABLE themes (
+  id         INTEGER PRIMARY KEY,
+  slug       TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,
+  runners    TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE books (
+  id         INTEGER PRIMARY KEY,
+  theme_id   INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+  slug       TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  file       TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'ingesting' CHECK (status IN ('ingesting', 'ready', 'failed')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (theme_id, slug)
+);
+
+CREATE TABLE sections (
+  id            INTEGER PRIMARY KEY,
+  book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  chapter       INTEGER NOT NULL,
+  number        INTEGER NOT NULL,
+  chapter_title TEXT NOT NULL,
+  title         TEXT NOT NULL,
+  page          TEXT,
+  path          TEXT NOT NULL,
+  words         INTEGER NOT NULL,
+  UNIQUE (book_id, chapter, number)
+);
+
+CREATE TABLE modules (
+  id       INTEGER PRIMARY KEY,
+  theme_id INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  name     TEXT NOT NULL
+);
+
+CREATE TABLE concepts (
+  id          INTEGER PRIMARY KEY,
+  theme_id    INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+  module_id   INTEGER NOT NULL REFERENCES modules(id),
+  slug        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  objective   TEXT NOT NULL,
+  kind        TEXT NOT NULL CHECK (kind IN ('knowledge', 'skill')),
+  level       TEXT NOT NULL CHECK (level IN ('basic', 'intermediate', 'advanced')),
+  status      TEXT NOT NULL DEFAULT 'new'
+              CHECK (status IN ('new', 'to_test', 'known', 'failed', 'queued', 'learning', 'mastered', 'skipped')),
+  queue_pos   INTEGER,
+  review_step INTEGER NOT NULL DEFAULT 0,
+  review_at   TEXT,
+  UNIQUE (theme_id, slug)
+);
+
+CREATE TABLE concept_sources (
+  concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+  quote      TEXT NOT NULL,
+  PRIMARY KEY (concept_id, section_id)
+);
+
+CREATE TABLE concept_prereqs (
+  concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  prereq_id  INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  PRIMARY KEY (concept_id, prereq_id),
+  CHECK (concept_id <> prereq_id)
+);
+
+CREATE TABLE questions (
+  id         INTEGER PRIMARY KEY,
+  concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  purpose    TEXT NOT NULL CHECK (purpose IN ('diagnose', 'test', 'review')),
+  kind       TEXT NOT NULL CHECK (kind IN ('choice', 'short', 'apply')),
+  text       TEXT NOT NULL,
+  choices    TEXT,
+  answer     TEXT NOT NULL,
+  key_points TEXT NOT NULL DEFAULT '[]',
+  section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL
+);
+
+CREATE TABLE attempts (
+  id          INTEGER PRIMARY KEY,
+  question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  answer      TEXT NOT NULL,
+  score       INTEGER NOT NULL CHECK (score IN (0, 1, 2)),
+  feedback    TEXT NOT NULL DEFAULT '',
+  disputed    INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE lessons (
+  id         INTEGER PRIMARY KEY,
+  concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  round      INTEGER NOT NULL,
+  text       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE lesson_messages (
+  id         INTEGER PRIMARY KEY,
+  lesson_id  INTEGER NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  text       TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE exercises (
+  id         INTEGER PRIMARY KEY,
+  concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  runner     TEXT NOT NULL,
+  spec       TEXT NOT NULL,
+  status     TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+// Version 2: sessions group the questions of a diagnosis, a test, or a review.
+const V2 = `
+CREATE TABLE sessions (
+  id         INTEGER PRIMARY KEY,
+  theme_id   INTEGER NOT NULL REFERENCES themes(id) ON DELETE CASCADE,
+  module_id  INTEGER REFERENCES modules(id) ON DELETE SET NULL,
+  kind       TEXT NOT NULL CHECK (kind IN ('diagnose', 'test', 'review')),
+  status     TEXT NOT NULL CHECK (status IN ('preparing', 'ready', 'finished', 'failed')),
+  error      TEXT,
+  prepared   INTEGER NOT NULL DEFAULT 0,
+  total      INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE session_concepts (
+  session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  concept_id INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  result     TEXT CHECK (result IN ('known', 'failed')),
+  PRIMARY KEY (session_id, concept_id)
+);
+
+ALTER TABLE questions ADD COLUMN session_id INTEGER REFERENCES sessions(id) ON DELETE CASCADE;
+ALTER TABLE questions ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+`;
+
+// Version 3: lessons and chat answers keep their references as JSON.
+const V3 = `
+ALTER TABLE lessons ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE lesson_messages ADD COLUMN refs TEXT NOT NULL DEFAULT '[]';
+`;
+
+// Version 4: a lesson is short. On request, the tutor writes a detailed lesson with references.
+// A lesson from before this version is already detailed.
+const V4 = `
+ALTER TABLE lessons ADD COLUMN detail TEXT;
+ALTER TABLE lessons ADD COLUMN detail_refs TEXT NOT NULL DEFAULT '[]';
+UPDATE lessons SET detail = text, detail_refs = refs;
+`;
+
+// Version 5: the user stars the important concepts. The tutor has no review schedule, so its columns go.
+// The CHECK constraints of sessions and questions keep the value 'review', because a change needs a rebuild of the table.
+const V5 = `
+ALTER TABLE concepts ADD COLUMN starred INTEGER NOT NULL DEFAULT 0 CHECK (starred IN (0, 1));
+ALTER TABLE concepts DROP COLUMN review_step;
+ALTER TABLE concepts DROP COLUMN review_at;
+`;
+
+// Version 6: a lesson has one text, with references. The length of the lesson follows the concept.
+// A detailed lesson replaces its short lesson. A short lesson with no detailed lesson stays, with no references.
+const V6 = `
+UPDATE lessons SET text = detail, refs = detail_refs WHERE detail IS NOT NULL;
+ALTER TABLE lessons DROP COLUMN detail;
+ALTER TABLE lessons DROP COLUMN detail_refs;
+`;
+
+// Version 7: the tutor has no exercise runners. The grader scores each answer, so the runner data goes.
+const V7 = `
+DROP TABLE exercises;
+ALTER TABLE themes DROP COLUMN runners;
+`;
+
+// Version 8: a theme is now a subject. The data folder "themes" becomes "subjects" (see openDb),
+// so the stored paths change too. SQLite updates the foreign keys and the UNIQUE constraints.
+const V8 = `
+ALTER TABLE themes RENAME TO subjects;
+ALTER TABLE books RENAME COLUMN theme_id TO subject_id;
+ALTER TABLE modules RENAME COLUMN theme_id TO subject_id;
+ALTER TABLE concepts RENAME COLUMN theme_id TO subject_id;
+ALTER TABLE sessions RENAME COLUMN theme_id TO subject_id;
+UPDATE books SET file = 'subjects/' || substr(file, 8) WHERE file LIKE 'themes/%';
+UPDATE sections SET path = 'subjects/' || substr(path, 8) WHERE path LIKE 'themes/%';
+UPDATE lessons SET refs = replace(refs, '"path":"themes/', '"path":"subjects/');
+UPDATE lesson_messages SET refs = replace(refs, '"path":"themes/', '"path":"subjects/');
+`;
+
+// Version 9: the app runs ingest in the background. Each run keeps its status and its progress.
+// The mode "fetch" is for the download of an online book (milestone 18) or of a video (milestone 19).
+const V9 = `
+CREATE TABLE ingests (
+  id         INTEGER PRIMARY KEY,
+  subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  book       TEXT NOT NULL,
+  file       TEXT NOT NULL,
+  title      TEXT NOT NULL,
+  mode       TEXT NOT NULL CHECK (mode IN ('preview', 'save', 'fetch')),
+  chapters   TEXT NOT NULL DEFAULT '[]',
+  status     TEXT NOT NULL CHECK (status IN ('running', 'done', 'stopped', 'failed')),
+  done       INTEGER NOT NULL DEFAULT 0,
+  total      INTEGER NOT NULL DEFAULT 0,
+  step       TEXT NOT NULL DEFAULT '',
+  result     TEXT,
+  error      TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+// Version 10: the modules follow the book order. A module takes the place of its first source: the book (in the order
+// of ingest), then the chapter and the section. Before, a module got the next number when ingest made it, so a chapter
+// from a later run came after the other chapters. After this version, each save puts the modules in the book order.
+const V10 = `
+UPDATE modules SET position = (
+  SELECT ranked.position FROM (
+    SELECT m.id, ROW_NUMBER() OVER (PARTITION BY m.subject_id ORDER BY p.place IS NULL, p.place, m.position, m.id) AS position
+    FROM modules m LEFT JOIN (
+      SELECT c.module_id, MIN(s.book_id * 1000000000000 + s.chapter * 1000000 + s.number) AS place
+      FROM concepts c JOIN concept_sources cs ON cs.concept_id = c.id JOIN sections s ON s.id = cs.section_id
+      GROUP BY c.module_id
+    ) p ON p.module_id = m.id
+  ) ranked WHERE ranked.id = modules.id
+);
+`;
+
+// Version 11: a download keeps its start address, for example a YouTube address. The book page shows a video download
+// with its own texts.
+const V11 = `
+ALTER TABLE ingests ADD COLUMN source TEXT;
+`;
+
+// Version 12: a session keeps the id of the job that writes its questions. SQLite can give the id of a removed
+// session to a new session. The job id tells the job if the session with its id is still its own session.
+const V12 = `
+ALTER TABLE sessions ADD COLUMN job TEXT;
+`;
+
+// Version 13: each concept gets a random uid that does not change. SQLite can give the id of a removed concept
+// to a new concept, but not its uid. A model request for a concept checks the uid before it saves its result.
+// The trigger gives a uid to each new concept.
+const V13 = `
+ALTER TABLE concepts ADD COLUMN uid TEXT;
+UPDATE concepts SET uid = lower(hex(randomblob(16)));
+CREATE UNIQUE INDEX concepts_uid ON concepts (uid);
+CREATE TRIGGER concepts_new_uid AFTER INSERT ON concepts WHEN NEW.uid IS NULL
+BEGIN
+  UPDATE concepts SET uid = lower(hex(randomblob(16))) WHERE id = NEW.id;
+END;
+`;
+
+export const MIGRATIONS = [V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13];
+// The version that renames the "themes" data folder to "subjects".
+export const SUBJECTS_VERSION = 8;
+export const SCHEMA_VERSION = MIGRATIONS.length;
+

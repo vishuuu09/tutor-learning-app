@@ -1,0 +1,110 @@
+import { useEffect, useState } from "react";
+
+// A small hash router: "#/", "#/subjects/sql", "#/subjects/sql/map?concept=b-tree-index", "#/subjects/sql/map?module=3".
+
+// The status filters of the review board. "all" is the default, so the address does not show it.
+export const BOARD_SHOWS = ["all", "learned", "learning", "queued", "not-chosen", "skipped"] as const;
+export type BoardShow = (typeof BOARD_SHOWS)[number];
+
+// The filters of the review board. The address keeps them, so a link or a bookmark opens the same list.
+export interface BoardFilters {
+  show: BoardShow;
+  starred: boolean;
+  find: string;
+}
+
+export type Route =
+  | { name: "home" }
+  | { name: "subject"; slug: string }
+  | { name: "map"; slug: string; concept: string | null; module: number | null }
+  | { name: "queue"; slug: string }
+  | ({ name: "board"; slug: string } & BoardFilters)
+  // The book page. The view "plan" shows the chapters for a new run, also after a finished run.
+  | { name: "book"; slug: string; book: string; view: "plan" | null }
+  // The form that adds an online book to a subject.
+  | { name: "online"; slug: string }
+  | { name: "lesson"; conceptId: number }
+  | { name: "session"; id: number }
+  // The model, the API keys, and the video model.
+  | { name: "settings" }
+  | { name: "not-found" };
+
+export function parseHash(hash: string): Route {
+  const [path = "", query = ""] = hash.replace(/^#/, "").split("?");
+  const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts.length === 0) return { name: "home" };
+  if (parts[0] === "settings" && parts.length === 1) return { name: "settings" };
+  if (parts[0] === "subjects" && parts[1] && parts.length === 2) return { name: "subject", slug: parts[1] };
+  if (parts[0] === "subjects" && parts[1] && parts[2] === "map" && parts.length === 3) {
+    const params = new URLSearchParams(query);
+    const module = Number(params.get("module"));
+    return { name: "map", slug: parts[1], concept: params.get("concept"), module: Number.isInteger(module) && module > 0 ? module : null };
+  }
+  if (parts[0] === "subjects" && parts[1] && parts[2] === "queue" && parts.length === 3) return { name: "queue", slug: parts[1] };
+  if (parts[0] === "subjects" && parts[1] && parts[2] === "books" && parts[3] && parts.length === 4) {
+    return { name: "book", slug: parts[1], book: parts[3], view: new URLSearchParams(query).get("view") === "plan" ? "plan" : null };
+  }
+  if (parts[0] === "subjects" && parts[1] && parts[2] === "online" && parts.length === 3) return { name: "online", slug: parts[1] };
+  if (parts[0] === "subjects" && parts[1] && parts[2] === "board" && parts.length === 3) {
+    const params = new URLSearchParams(query);
+    const show = params.get("show");
+    return {
+      name: "board",
+      slug: parts[1],
+      show: BOARD_SHOWS.find((value) => value === show) ?? "all",
+      starred: params.get("starred") === "1",
+      find: params.get("find") ?? "",
+    };
+  }
+  if (parts[0] === "sessions" && parts[1] && parts.length === 2) return { name: "session", id: Number(parts[1]) };
+  if (parts[0] === "lessons" && parts[1] && parts.length === 2) return { name: "lesson", conceptId: Number(parts[1]) };
+  return { name: "not-found" };
+}
+
+export const href = {
+  home: () => "#/",
+  subject: (slug: string) => `#/subjects/${encodeURIComponent(slug)}`,
+  map: (slug: string, concept?: string) =>
+    `#/subjects/${encodeURIComponent(slug)}/map${concept ? `?concept=${encodeURIComponent(concept)}` : ""}`,
+  // The concept map, with the page at the start of one module.
+  mapModule: (slug: string, moduleId: number) => `#/subjects/${encodeURIComponent(slug)}/map?module=${moduleId}`,
+  queue: (slug: string) => `#/subjects/${encodeURIComponent(slug)}/queue`,
+  board: (slug: string, filters: Partial<BoardFilters> = {}) => {
+    const params = new URLSearchParams();
+    if (filters.show && filters.show !== "all") params.set("show", filters.show);
+    if (filters.starred) params.set("starred", "1");
+    // The search text stays as the user types it, with its spaces.
+    if (filters.find) params.set("find", filters.find);
+    const query = params.toString();
+    return `#/subjects/${encodeURIComponent(slug)}/board${query ? `?${query}` : ""}`;
+  },
+  book: (slug: string, book: string, view?: "plan") =>
+    `#/subjects/${encodeURIComponent(slug)}/books/${encodeURIComponent(book)}${view ? `?view=${view}` : ""}`,
+  online: (slug: string) => `#/subjects/${encodeURIComponent(slug)}/online`,
+  session: (id: number) => `#/sessions/${id}`,
+  lesson: (conceptId: number) => `#/lessons/${conceptId}`,
+  settings: () => "#/settings",
+};
+
+// The event after replaceHash. The browser sends no "hashchange" event after history.replaceState.
+const REPLACE_EVENT = "tutor:replacehash";
+
+// Change the address with no new entry in the history of the browser, for example for the filters of a page.
+export function replaceHash(hash: string): void {
+  window.history.replaceState(null, "", hash);
+  window.dispatchEvent(new Event(REPLACE_EVENT));
+}
+
+export function useRoute(): Route {
+  const [route, setRoute] = useState(() => parseHash(window.location.hash));
+  useEffect(() => {
+    const update = () => setRoute(parseHash(window.location.hash));
+    window.addEventListener("hashchange", update);
+    window.addEventListener(REPLACE_EVENT, update);
+    return () => {
+      window.removeEventListener("hashchange", update);
+      window.removeEventListener(REPLACE_EVENT, update);
+    };
+  }, []);
+  return route;
+}

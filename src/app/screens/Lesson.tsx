@@ -1,0 +1,396 @@
+import { useEffect, useRef, useState } from "react";
+import type { LessonReference, LessonView, QueueView } from "../../server/api-types";
+import { getJson, postJson } from "../api";
+import { CitedMarkdown, ReferenceList } from "../components/CitedMarkdown";
+import { Drawer } from "../components/Drawer";
+import { InlineCode } from "../components/InlineCode";
+import { Layout, Notice } from "../components/Layout";
+import { SectionPanel } from "../components/SectionPanel";
+import { Spinner } from "../components/Spinner";
+import { StarButton } from "../components/StarButton";
+import { STATUS_INFO } from "../components/StatusMark";
+import { href } from "../router";
+
+const LEVEL = { basic: "Basic", intermediate: "Intermediate", advanced: "Advanced" } as const;
+
+export function Lesson({ conceptId }: { conceptId: number }) {
+  const [view, setView] = useState<LessonView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getJson<LessonView>(`/api/concepts/${conceptId}/lesson`)
+      .then(setView)
+      .catch((problem: unknown) => setError((problem as Error).message));
+  }, [conceptId]);
+
+  return (
+    <Layout subject={view?.concept.subject} tab="queue">
+      {!view && !error && <p className="quiet">Loading the lesson.</p>}
+      {!view && error && <Notice title="The lesson did not load">{<p>{error}</p>}</Notice>}
+      {view && !view.lesson && <LessonStart view={view} onStarted={setView} />}
+      {view && view.lesson && <LessonBody view={view} onChange={setView} />}
+    </Layout>
+  );
+}
+
+function ConceptHeader({ view, onChange }: { view: LessonView; onChange: (view: LessonView) => void }) {
+  return (
+    <>
+      <div className="title-row">
+        <h1>{view.concept.name}</h1>
+        <StarButton
+          conceptId={view.concept.id}
+          name={view.concept.name}
+          starred={view.concept.starred}
+          onChange={(starred) => onChange({ ...view, concept: { ...view.concept, starred } })}
+        />
+      </div>
+      <p className="lead">
+        <InlineCode text={view.concept.objective} />
+      </p>
+      <p className="quiet small">
+        {LEVEL[view.concept.level]} {view.concept.kind}, module {view.concept.module.position}, {view.concept.module.name}
+        {view.lesson && view.lesson.round > 1 ? `. Lesson ${view.lesson.round}` : ""}
+      </p>
+    </>
+  );
+}
+
+function LessonStart({ view, onStarted }: { view: LessonView; onStarted: (view: LessonView) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [section, setSection] = useState<number | null>(null);
+  const inQueue = view.concept.status === "queued" || view.concept.status === "learning";
+
+  const start = async () => {
+    setBusy("start");
+    setError(null);
+    try {
+      onStarted(await postJson<LessonView>(`/api/concepts/${view.concept.id}/lesson`));
+    } catch (problem) {
+      setError((problem as Error).message);
+      setBusy(null);
+    }
+  };
+
+  const learnFirst = async (conceptId: number) => {
+    setBusy("learn");
+    try {
+      await postJson(`/api/concepts/${conceptId}/top`);
+      window.location.hash = href.lesson(conceptId);
+    } catch (problem) {
+      setError((problem as Error).message);
+      setBusy(null);
+    }
+  };
+
+  const testIt = async (conceptId: number) => {
+    setBusy("test");
+    try {
+      const { sessionId } = await postJson<{ sessionId: number }>(`/api/concepts/${conceptId}/test`);
+      window.location.hash = href.session(sessionId);
+    } catch (problem) {
+      setError((problem as Error).message);
+      setBusy(null);
+    }
+  };
+
+  // Take the concept out of the study queue and open the next lesson in the queue.
+  // Later lets you choose the concept again, Skip marks it as skipped. If the queue is empty, show the queue.
+  const takeOut = async (status: "new" | "skipped") => {
+    setBusy(status);
+    setError(null);
+    const slug = view.concept.subject.slug;
+    try {
+      const queue = await postJson<QueueView>(`/api/subjects/${encodeURIComponent(slug)}/queue/remove`, { conceptId: view.concept.id, status });
+      const next = queue.items[0];
+      window.location.hash = next ? href.lesson(next.conceptId) : href.queue(slug);
+    } catch (problem) {
+      setError((problem as Error).message);
+      setBusy(null);
+    }
+  };
+
+  return (
+    <>
+      <ConceptHeader view={view} onChange={onStarted} />
+      {view.missingPrerequisites.length > 0 && (
+        <div className="suggestion">
+          <p>{view.warning}</p>
+          {view.missingPrerequisites.map((prerequisite) => (
+            <p key={prerequisite.conceptId} className="button-row">
+              <span className="prerequisite-name">
+                {prerequisite.name} <span className="quiet">({STATUS_INFO[prerequisite.status].label})</span>
+              </span>
+              <button className="text-button strong" disabled={busy !== null} onClick={() => learnFirst(prerequisite.conceptId)}>
+                {prerequisite.status === "learning" ? "Continue its lesson" : "Learn it first"}
+              </button>
+              <button className="text-button" disabled={busy !== null} onClick={() => testIt(prerequisite.conceptId)}>
+                Test it
+              </button>
+            </p>
+          ))}
+        </div>
+      )}
+      <p>The tutor writes the lesson from these sections of your books:</p>
+      <ul className="plain-list sources-list">
+        {view.sources.map((source) => (
+          <li key={source.sectionId}>
+            <button className="text-button" onClick={() => setSection(source.sectionId)}>
+              {source.book}, section {source.ref} {source.title}
+              {source.page ? `, page ${source.page}` : ""}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="button-row">
+        <button className="button" onClick={start} disabled={busy !== null}>
+          {busy === "start" ? (
+            <>
+              <Spinner />
+              Writing the lesson
+            </>
+          ) : view.missingPrerequisites.length > 0 ? "Start the lesson anyway" : "Start the lesson"}
+        </button>
+        {inQueue && (
+          <>
+            <button
+              className="text-button"
+              onClick={() => takeOut("new")}
+              disabled={busy !== null}
+              title="Take the concept out of the queue. You can choose it again another day."
+            >
+              Later
+            </button>
+            <button className="text-button" onClick={() => takeOut("skipped")} disabled={busy !== null} title="Take the concept out of the queue and mark it as skipped.">
+              Skip
+            </button>
+          </>
+        )}
+      </p>
+      {busy === "start" && (
+        <p className="quiet" role="status">
+          The tutor writes the lesson. This can take a minute.
+        </p>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {section !== null && <SectionPanel sectionId={section} onClose={() => setSection(null)} />}
+    </>
+  );
+}
+
+function LessonBody({ view, onChange }: { view: LessonView; onChange: (view: LessonView) => void }) {
+  const lesson = view.lesson!;
+  const [open, setOpen] = useState<LessonReference | null>(null);
+  const [listOpen, setListOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const end = useRef<HTMLDivElement>(null);
+  const mastered = view.concept.status === "mastered";
+
+  const ask = async () => {
+    setAsking(true);
+    setError(null);
+    try {
+      onChange(await postJson<LessonView>(`/api/lessons/${lesson.id}/messages`, { text: question }));
+      setQuestion("");
+      requestAnimationFrame(() => end.current?.scrollIntoView({ block: "end" }));
+    } catch (problem) {
+      setError((problem as Error).message);
+    }
+    setAsking(false);
+  };
+
+  // With again, a mastered concept gets the questions of its last test.
+  const startTest = async (again = false) => {
+    setTesting(true);
+    setActionError(null);
+    try {
+      const { sessionId } = await postJson<{ sessionId: number }>(`/api/concepts/${view.concept.id}/check`, { again });
+      window.location.hash = href.session(sessionId);
+    } catch (problem) {
+      setActionError((problem as Error).message);
+      setTesting(false);
+    }
+  };
+
+  // Skip the test, for example for a simple concept. The concept becomes mastered.
+  const skipTest = async () => {
+    setSkipping(true);
+    setActionError(null);
+    try {
+      onChange(await postJson<LessonView>(`/api/concepts/${view.concept.id}/skip-test`));
+    } catch (problem) {
+      setActionError((problem as Error).message);
+    }
+    setSkipping(false);
+  };
+
+  const teachAgain = async () => {
+    setRewriting(true);
+    setActionError(null);
+    try {
+      onChange(await postJson<LessonView>(`/api/concepts/${view.concept.id}/lesson`, { again: true }));
+      window.scrollTo({ top: 0 });
+    } catch (problem) {
+      setActionError((problem as Error).message);
+    }
+    setRewriting(false);
+  };
+
+  return (
+    <>
+      <ConceptHeader view={view} onChange={onChange} />
+      {lesson.references.length === 0 && (
+        <p className="warning">This lesson has no reference that the tutor could find in your books. Check it against the book sections.</p>
+      )}
+      <article className="reading lesson">
+        <CitedMarkdown text={lesson.text} references={lesson.references} onOpen={setOpen} />
+      </article>
+
+      {lesson.references.length > 0 && (
+        <p className="references-link">
+          <button className="text-button" onClick={() => setListOpen(true)}>
+            Show the references ({lesson.references.length})
+          </button>
+        </p>
+      )}
+
+      <section aria-labelledby="questions-heading" className="chat">
+        <h2 id="questions-heading">Questions</h2>
+        {view.messages.length === 0 && <p className="quiet">Ask about anything in the lesson that is not clear.</p>}
+        {view.messages.map((message) =>
+          message.role === "user" ? (
+            <p key={message.id} className="chat-question">
+              {message.text}
+            </p>
+          ) : (
+            <div key={message.id} className="chat-answer reading">
+              <CitedMarkdown text={message.text} references={message.references} onOpen={setOpen} />
+              <ReferenceList references={message.references} onOpen={setOpen} />
+            </div>
+          ),
+        )}
+        <div ref={end} />
+        <div className="chat-input">
+          <label htmlFor="question" className="visually-hidden">
+            Your question
+          </label>
+          <textarea
+            id="question"
+            rows={3}
+            value={question}
+            placeholder="Ask a question about the lesson"
+            onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && question.trim() && !asking) void ask();
+            }}
+          />
+          <button className="button" onClick={ask} disabled={asking || question.trim() === ""}>
+            {asking ? (
+              <>
+                <Spinner />
+                Writing the answer
+              </>
+            ) : (
+              "Ask"
+            )}
+          </button>
+        </div>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+      </section>
+
+      <section aria-labelledby="after-heading">
+        <h2 id="after-heading">After the lesson</h2>
+        {mastered ? (
+          <p>
+            The concept is mastered. To check that you still know it, test it again.{" "}
+            {view.hasFinishedTest ? "The test uses the questions of your last test." : "The tutor writes new questions."}
+          </p>
+        ) : (
+          <>
+            <p>
+              The tutor writes the questions that fit the concept: one question for a simple concept, more for a concept with more parts. To
+              pass, answer each question correctly.
+              {view.failedTests > 0 && ` You did not pass the test ${view.failedTests} ${view.failedTests === 1 ? "time" : "times"}.`}
+            </p>
+            <p>For a simple concept, skip the test. The concept then becomes mastered.</p>
+            <p>If the lesson was not clear, the tutor can teach the concept again from a different angle.</p>
+          </>
+        )}
+        <p className="button-row">
+          {mastered && view.next && (
+            <a className="button" href={href.lesson(view.next.conceptId)}>
+              Next lesson: {view.next.name}
+            </a>
+          )}
+          {mastered && (
+            <button className={view.next ? "button secondary" : "button"} onClick={() => startTest(true)} disabled={testing || rewriting}>
+              {testing ? "Starting the test" : view.openTestId ? "Continue the test" : "Test me again"}
+            </button>
+          )}
+          {!mastered && (
+            <>
+              <button className="button" onClick={() => startTest()} disabled={testing || rewriting || skipping}>
+                {testing ? "Starting the test" : view.openTestId ? "Continue the test" : "Test me"}
+              </button>
+              <button className="button secondary" onClick={skipTest} disabled={testing || rewriting || skipping}>
+                Skip the test
+              </button>
+            </>
+          )}
+          <button className="text-button strong" onClick={teachAgain} disabled={rewriting || testing || skipping}>
+            {rewriting ? (
+              <>
+                <Spinner />
+                Writing a new lesson
+              </>
+            ) : (
+              "Teach it again"
+            )}
+          </button>
+          <a className="text-link" href={href.queue(view.concept.subject.slug)}>
+            Back to the study queue
+          </a>
+        </p>
+        {actionError && (
+          <p className="error" role="alert">
+            {actionError}
+          </p>
+        )}
+      </section>
+
+      {open ? (
+        <SectionPanel
+          sectionId={open.sectionId}
+          quote={open.quote}
+          video={open.video}
+          onClose={() => {
+            setOpen(null);
+            setListOpen(false);
+          }}
+          onBack={listOpen ? () => setOpen(null) : undefined}
+        />
+      ) : (
+        listOpen && (
+          <Drawer label="References" title="References" onClose={() => setListOpen(false)}>
+            <ReferenceList references={lesson.references} onOpen={setOpen} />
+          </Drawer>
+        )
+      )}
+    </>
+  );
+}
